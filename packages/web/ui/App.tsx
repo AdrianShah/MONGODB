@@ -98,7 +98,11 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <span className="logo" aria-hidden>✓</span>
+          <span className="logo" aria-hidden>
+            <svg viewBox="0 0 24 24" width="16" height="16">
+              <path d="M17 6.5H8.2v11H17M8.2 12H15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
           <div>
             <h1>EscrowOps</h1>
             <p>The agent proposes. MongoDB decides what pays.</p>
@@ -126,13 +130,14 @@ export function App() {
         <>
       <section className="stats" aria-label="Summary">
         <Stat label="Tickets" value={String(tickets.length)} />
-        <Stat label="Paid out" value={dollars(totals.paidCents)} sub={`${totals.paid} refunds`} />
-        <Stat label="Awaiting approval" value={String(totals.held)} />
+        <Stat label="Paid out" value={dollars(totals.paidCents)} sub={`${totals.paid} refunds`} tone="paid" />
+        <Stat label="Awaiting approval" value={String(totals.held)} tone={totals.held > 0 ? 'alert' : undefined} />
         <Stat
           label="Auto budget today"
           value={budget ? `${dollars(budget.spent_cents)}` : '—'}
           sub={budget ? `of ${dollars(budget.cap_cents)}; then refunds go to review` : 'not started today'}
           testId="budget"
+          meter={budget ? budget.spent_cents / Math.max(1, budget.cap_cents) : undefined}
         />
       </section>
 
@@ -164,12 +169,31 @@ export function App() {
   );
 }
 
-function Stat({ label, value, sub, testId }: { label: string; value: string; sub?: string; testId?: string }) {
+function Stat({
+  label,
+  value,
+  sub,
+  testId,
+  tone,
+  meter,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  testId?: string;
+  tone?: 'paid' | 'alert';
+  meter?: number;
+}) {
   return (
-    <div className="stat" data-testid={testId}>
+    <div className={tone ? `stat stat-${tone}` : 'stat'} data-testid={testId}>
       <span className="stat-label">{label}</span>
       <span className="stat-value">{value}</span>
       {sub && <span className="stat-sub">{sub}</span>}
+      {meter !== undefined && (
+        <div className="budget-track" aria-hidden>
+          <span style={{ width: `${Math.min(100, Math.max(0, meter * 100))}%` }} />
+        </div>
+      )}
     </div>
   );
 }
