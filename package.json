@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:chaos": "vitest run --config vitest.chaos.config.ts",
     "typecheck": "tsc --noEmit",
+    "api": "tsx packages/api/src/main.ts",
     "batch": "tsx packages/agent/src/main.ts",
     "executor": "tsx packages/executor/src/main.ts",
     "fake-provider": "tsx packages/executor/src/providers/fake-http-server.ts",
@@ -25,6 +26,7 @@
   },
   "dependencies": {
     "@escrowops/agent": "*",
+    "@escrowops/api": "*",
     "@escrowops/executor": "*",
     "@escrowops/shared": "*",
     "dotenv": "^18.0.10",

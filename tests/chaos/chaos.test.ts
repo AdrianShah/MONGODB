@@ -51,13 +51,15 @@ async function assertExactlyOnce(sources: RefundSourceDoc[]) {
   const created = provider.created;
   const createdKeys = created.map((c) => c.request.idempotencyKey);
   expect(new Set(createdKeys).size, 'duplicate refunds at the provider').toBe(createdKeys.length);
-  expect(createdKeys.sort()).toEqual(sources.map((s) => s.idempotency_key).sort());
 
   const entries = await ledger().find().toArray();
   expect(entries).toHaveLength(sources.length);
+  expect(entries.map((e) => e.source_doc_id.toHexString()).sort()).toEqual(sources.map((s) => s._id.toHexString()).sort());
+  // The provider key is the ledger source_id (E2, I12c).
+  expect(createdKeys.sort()).toEqual(entries.map((e) => e.source_id).sort());
   for (const e of entries) {
     expect(e.status).toBe('succeeded');
-    const refund = created.find((c) => c.request.idempotencyKey === e.idempotency_key);
+    const refund = created.find((c) => c.request.idempotencyKey === e.source_id);
     expect(e.provider_refund_id).toBe(refund?.refundId);
   }
 }

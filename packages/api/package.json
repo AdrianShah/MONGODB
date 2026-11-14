@@ -1,0 +1,20 @@
+{
+  "name": "@escrowops/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Approval service: approver login, approve/reject, and promotion of fully approved refunds.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@escrowops/shared": "*",
+    "fastify": "^5.12.8",
+    "mongodb": "^7.9.0",
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
+  }
+}

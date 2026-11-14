@@ -4,7 +4,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { ObjectId, type Db } from 'mongodb';
-import { COLLECTIONS, DEFAULT_POLICY, type ApprovedDoc, type IntentDoc, type OrderDoc } from '@escrowops/shared';
+import { COLLECTIONS, DEFAULT_POLICY, ledgerSourceId, type ApprovedDoc, type IntentDoc, type OrderDoc } from '@escrowops/shared';
 import type { ExecutorLedgerDoc } from '@escrowops/executor';
 
 let seq = 0;
@@ -68,10 +68,15 @@ export async function insertIntent(
 }
 
 /** An approved refund with two distinct approvers, so any amount up to the hard cap is valid. */
-export async function insertApproved(db: Db, order: OrderDoc, amount_cents: number): Promise<ApprovedDoc> {
+export async function insertApproved(
+  db: Db,
+  order: OrderDoc,
+  amount_cents: number,
+  extra: Partial<IntentDoc> = {},
+): Promise<ApprovedDoc> {
   const now = new Date();
   const doc: ApprovedDoc = {
-    ...proposal(order, amount_cents, {}),
+    ...proposal(order, amount_cents, extra),
     review_id: new ObjectId(),
     approvals: [
       { approver_id: 'approver-a', approved_at: now },
@@ -89,15 +94,15 @@ export function abandonedPending(
 ): ExecutorLedgerDoc {
   const past = new Date(Date.now() - 60_000);
   return {
-    source_type: 'intent',
-    source_id: source._id,
+    source_id: ledgerSourceId('intents', source._id),
+    source_collection: 'intents',
+    source_doc_id: source._id,
     trace_id: source.trace_id,
     ticket_id: source.ticket_id,
     order_id: source.order_id,
     customer_id: source.customer_id,
     amount_cents: source.amount_cents,
     currency: 'usd',
-    idempotency_key: source.idempotency_key,
     status: 'pending',
     provider: 'fake',
     owner: 'executor-dead',

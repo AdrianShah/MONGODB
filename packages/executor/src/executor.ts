@@ -8,16 +8,10 @@ import {
   type ResumeToken,
   type Timestamp,
 } from 'mongodb';
-import { COLLECTIONS, type ExecutorStateDoc, type OrderDoc } from '@escrowops/shared';
+import { COLLECTIONS, ledgerSourceId, type ExecutorStateDoc, type OrderDoc } from '@escrowops/shared';
 import { Crasher } from './crash.js';
 import { PermanentProviderError, TransientProviderError, type PaymentProvider } from './providers/types.js';
-import {
-  SOURCE_TYPE,
-  sourceLabel,
-  type ExecutorLedgerDoc,
-  type RefundSourceDoc,
-  type SourceCollection,
-} from './types.js';
+import type { ExecutorLedgerDoc, RefundSourceDoc, SourceCollection } from './types.js';
 
 export interface ExecutorOptions {
   db: Db;
@@ -49,8 +43,10 @@ const streamKey = (coll: SourceCollection) => `stream:${coll}`;
  *
  * Exactly-once rests on three things:
  *  - `ledger.source_id` is unique, so only one ledger entry (and one owner) exists per source.
- *  - The provider is called with the source's idempotency key, so repeating a call after a
- *    crash returns the original refund instead of creating a second one.
+ *  - The provider is called with the ledger `source_id` as its idempotency key, so repeating a
+ *    call after a crash returns the original refund instead of creating a second one. (Not the
+ *    proposal's `idempotency_key`: that is the same on every run of a ticket, so after
+ *    `npm run reset` the provider would replay the previous run's refund.)
  *  - Recovery never has to guess: a `pending` entry is retried with the same key, a source
  *    with no entry is processed from scratch, and a replayed stream event hits the unique index.
  */
@@ -167,6 +163,11 @@ export class Executor {
           await this.enqueue(() => this.handleEvent(coll, change));
           resumeAfter = change._id;
         }
+        // Ended without an error (e.g. the collection was dropped): pause so it cannot spin.
+        if (!this.stopped) {
+          this.log(`[executor] ${coll} stream ended, reopening in 1s`);
+          await sleep(1000);
+        }
       } catch (err) {
         if (this.stopped) break;
         if (err instanceof MongoServerError && HISTORY_LOST_CODES.has(Number(err.code))) {
@@ -202,15 +203,21 @@ export class Executor {
   private async reconcilePending({ updatedBefore }: { updatedBefore: Date }) {
     const stale = await this.ledger.find({ status: 'pending', updated_at: { $lt: updatedBefore } }).toArray();
     for (const entry of stale) {
-      // Claim it atomically so two executors never both reconcile the same entry.
-      const claimed = await this.ledger.findOneAndUpdate(
-        { _id: entry._id, status: 'pending', updated_at: entry.updated_at },
-        { $set: { owner: this.instanceId, updated_at: new Date() } },
-        { returnDocument: 'after' },
-      );
-      if (!claimed) continue;
-      this.log(`[executor] reconciling pending ${claimed.source_type}:${claimed.source_id} (checks_passed=${claimed.checks_passed})`);
-      await this.checkAndPay(claimed);
+      // Each entry on its own: one that throws is logged and skipped, never blocking the rest
+      // or stopping the executor from starting. It stays pending for the next reconcile.
+      try {
+        // Claim it atomically so two executors never both reconcile the same entry.
+        const claimed = await this.ledger.findOneAndUpdate(
+          { _id: entry._id, status: 'pending', updated_at: entry.updated_at },
+          { $set: { owner: this.instanceId, updated_at: new Date() } },
+          { returnDocument: 'after' },
+        );
+        if (!claimed) continue;
+        this.log(`[executor] reconciling pending ${claimed.source_id} (checks_passed=${claimed.checks_passed})`);
+        await this.checkAndPay(claimed);
+      } catch (err) {
+        this.log(`[executor] reconcile of ${entry.source_id} failed, will retry later: ${(err as Error).message}`);
+      }
     }
   }
 
@@ -218,13 +225,20 @@ export class Executor {
   private async sweep() {
     for (const coll of SOURCES) {
       const missing = this.db.collection<RefundSourceDoc>(coll).aggregate<RefundSourceDoc>([
-        { $lookup: { from: COLLECTIONS.ledger, localField: '_id', foreignField: 'source_id', as: 'ledger' } },
+        {
+          $lookup: {
+            from: COLLECTIONS.ledger,
+            let: { sid: { $concat: [`${coll}:`, { $toString: '$_id' }] } },
+            pipeline: [{ $match: { $expr: { $eq: ['$source_id', '$$sid'] } } }, { $project: { _id: 1 } }],
+            as: 'ledger',
+          },
+        },
         { $match: { ledger: { $size: 0 } } },
         { $project: { ledger: 0 } },
         { $sort: { created_at: 1 } },
       ]);
       for await (const doc of missing) {
-        this.log(`[executor] sweep found unpaid ${sourceLabel(coll, doc._id)}`);
+        this.log(`[executor] sweep found unpaid ${ledgerSourceId(coll, doc._id)}`);
         await this.processSource(coll, doc);
       }
     }
@@ -236,15 +250,15 @@ export class Executor {
     this.crash.at(1);
     const now = new Date();
     const entry: ExecutorLedgerDoc = {
-      source_type: SOURCE_TYPE[coll],
-      source_id: doc._id,
+      source_id: ledgerSourceId(coll, doc._id),
+      source_collection: coll,
+      source_doc_id: doc._id,
       trace_id: doc.trace_id,
       ticket_id: doc.ticket_id,
       order_id: doc.order_id,
       customer_id: doc.customer_id,
       amount_cents: doc.amount_cents,
       currency: doc.currency,
-      idempotency_key: doc.idempotency_key,
       status: 'pending',
       provider: this.provider.name,
       checks_passed: false,
@@ -289,6 +303,14 @@ export class Executor {
     if (order.customer_id !== entry.customer_id) {
       return `order_customer_mismatch: order ${entry.order_id} belongs to ${order.customer_id}, not ${entry.customer_id}`;
     }
+    if (!order.payment_id) return `order_missing_payment_id: order ${entry.order_id} has no payment to refund against`;
+    // One payout per ticket: the provider keys are per source document, so it would not catch
+    // an auto-paid intent followed by an approved refund for the same ticket.
+    const sameTicket = await this.ledger.findOne(
+      { ticket_id: entry.ticket_id, status: { $in: ['pending', 'succeeded'] }, _id: { $ne: entry._id } },
+      { projection: { source_id: 1 } },
+    );
+    if (sameTicket) return `duplicate_ticket_payout: ticket ${entry.ticket_id} already has ${sameTicket.source_id}`;
     // Other pending entries count too, which errs toward refusing rather than overpaying.
     const [committed] = await this.ledger
       .aggregate<{ total: number }>([
@@ -319,8 +341,8 @@ export class Executor {
           paymentRef: order.payment_id,
           amountCents: entry.amount_cents,
           currency: entry.currency,
-          idempotencyKey: entry.idempotency_key,
-          metadata: { source: label(entry), trace_id: entry.trace_id, ticket_id: entry.ticket_id },
+          idempotencyKey: entry.source_id,
+          metadata: { source_id: entry.source_id, trace_id: entry.trace_id, ticket_id: entry.ticket_id },
         });
         this.crash.at(3);
         await this.finish(entry, { status: 'succeeded', provider: this.provider.name, provider_refund_id: result.refundId });
@@ -353,4 +375,4 @@ export class Executor {
   }
 }
 
-const label = (entry: ExecutorLedgerDoc) => `${entry.source_type}:${entry.source_id.toHexString()}`;
+const label = (entry: ExecutorLedgerDoc) => entry.source_id;

@@ -43,7 +43,7 @@ describe('agent proposals reach the executor', () => {
 
     const ledger = t().db.collection<ExecutorLedgerDoc>(COLLECTIONS.ledger);
     const entry = await waitFor(() => ledger.findOne({ ticket_id: 'T-1001', status: 'succeeded' }), { what: 'T-1001 payout' });
-    expect(entry).toMatchObject({ trace_id: small.trace_id, amount_cents: 8900, source_type: 'intent' });
+    expect(entry).toMatchObject({ trace_id: small.trace_id, amount_cents: 8900, source_collection: 'intents' });
     expect(provider.created).toHaveLength(1);
     expect(provider.created[0]!.request.paymentRef).toMatch(/^pi_/);
 

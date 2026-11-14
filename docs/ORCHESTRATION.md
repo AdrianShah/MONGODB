@@ -63,6 +63,8 @@ The plan changed in four places as a result of the review (PRD section 7 "Orders
 
 Items 6, 8, 9 and 10 touch files outside `packages/executor`. They are assigned to the executor's owner for this phase so one person makes each change; nobody else should edit those files until `feat/executor` merges.
 
+**Status (branch `fix/executor-review`):** items 1 to 10 are done, with tests I12a to I12d, O2a, and seed/reset payment tests; `npm test` 216 passed, `npm run test:chaos` 9 passed (C5 50 of 50). Item 6 changed `LedgerDoc` in `packages/shared/src/types.ts` (adds `ledgerSourceId()`) and the R8 ledger document in `scripts/lib/redteam-attacks.ts`. Item 9 added `createPayment` to `SeedOptions`, `scripts/lib/payments.ts`, and `StripeProvider.createTestPayment`. Item 11 is still open: it needs a Stripe test key.
+
 Not in this phase: the daily budget (E6). When it is built, `executor_role` needs `insert` on `review_queue`.
 
 ## Decisions

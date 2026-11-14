@@ -329,6 +329,12 @@ export interface SeedSummary {
 export interface SeedOptions {
   data?: SeedData;
   policy?: Policy;
+  /**
+   * T2: makes a real payment for an order and returns its ID. When set, every order a
+   * ticket refers to gets a fresh `payment_id` from it (PAYMENTS=stripe); otherwise the
+   * dataset's fake `pi_fake_...` IDs are used.
+   */
+  createPayment?: (order: OrderDoc) => Promise<string>;
 }
 
 /**
@@ -362,9 +368,18 @@ export async function seedDatabase(db: Db, options: SeedOptions = {}): Promise<S
 
   const schema = await applySchema(db, policy);
 
+  let orderDocs = data.orders;
+  if (options.createPayment) {
+    const ticketOrders = new Set(data.tickets.map((t) => t.order_id));
+    orderDocs = [];
+    for (const order of data.orders) {
+      orderDocs.push(ticketOrders.has(order._id) ? { ...order, payment_id: await options.createPayment(order) } : order);
+    }
+  }
+
   const [customers, orders, tickets] = await Promise.all([
     upsertExact(db, COLLECTIONS.customers, data.customers),
-    upsertExact(db, COLLECTIONS.orders, data.orders),
+    upsertExact(db, COLLECTIONS.orders, orderDocs),
     upsertExact(db, COLLECTIONS.tickets, data.tickets),
   ]);
 
