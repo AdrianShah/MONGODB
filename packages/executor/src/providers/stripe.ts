@@ -18,6 +18,26 @@ export class StripeProvider implements PaymentProvider {
     this.stripe = new Stripe(secretKey, { maxNetworkRetries: 2 });
   }
 
+  /**
+   * Seed helper (T2): a fresh, confirmed test-mode payment for an order, so refunds have
+   * something real to go against. Money already refunded on the order is refunded here too,
+   * so Stripe's refundable balance matches the order's. Returns the PaymentIntent ID.
+   */
+  async createTestPayment(order: { _id: string; amount_cents: number; refunded_cents?: number }): Promise<string> {
+    const intent = await this.stripe.paymentIntents.create({
+      amount: order.amount_cents,
+      currency: 'usd',
+      payment_method: 'pm_card_visa',
+      confirm: true,
+      automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+      metadata: { order_id: order._id, source: 'escrowops-seed' },
+    });
+    if (order.refunded_cents && order.refunded_cents > 0) {
+      await this.stripe.refunds.create({ payment_intent: intent.id, amount: order.refunded_cents, metadata: { source: 'escrowops-seed' } });
+    }
+    return intent.id;
+  }
+
   async refund(req: RefundRequest): Promise<RefundResult> {
     const target = req.paymentRef.startsWith("ch_")
       ? { charge: req.paymentRef }

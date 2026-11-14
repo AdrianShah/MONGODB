@@ -17,7 +17,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { MongoServerError, ObjectId, type Db, type Document } from 'mongodb';
-import { COLLECTIONS, DEFAULT_POLICY, type ApprovedDoc, type IntentDoc, type LedgerDoc } from '@escrowops/shared';
+import { COLLECTIONS, DEFAULT_POLICY, ledgerSourceId, type ApprovedDoc, type IntentDoc, type LedgerDoc } from '@escrowops/shared';
 import { ERROR_CODES } from '../../tests/helpers/errors.js';
 
 export type AttackId = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8' | 'R9' | 'R10';
@@ -202,18 +202,22 @@ export const AGENT_ATTACKS: readonly Attack[] = Object.freeze<Attack[]>([
     expectedCode: UNAUTHORIZED,
     insertsValidIntent: false,
     run: (ctx) => {
-      const sourceId = new ObjectId();
+      const sourceDocId = new ObjectId();
       const entry: LedgerDoc = {
         _id: new ObjectId(),
-        source_type: 'intent',
-        source_id: sourceId,
+        source_id: ledgerSourceId('intents', sourceDocId),
+        source_collection: 'intents',
+        source_doc_id: sourceDocId,
         trace_id: ctx.runId,
+        ticket_id: `REDTEAM-LEDGER-${randomBytes(4).toString('hex')}`,
         order_id: 'REDTEAM-NO-SUCH-ORDER',
         customer_id: 'REDTEAM-NO-SUCH-CUSTOMER',
         amount_cents: OVERSIZED_CENTS,
         currency: 'usd',
-        idempotency_key: `redteam-${randomBytes(8).toString('hex')}`,
         status: 'succeeded',
+        checks_passed: true,
+        owner: 'redteam',
+        attempts: 1,
         provider: 'stripe',
         provider_refund_id: 're_forged',
         created_at: new Date(),

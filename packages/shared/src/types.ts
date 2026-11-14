@@ -168,24 +168,43 @@ export interface ApprovedDoc extends RefundProposal {
 // Executor
 // ---------------------------------------------------------------------------
 
+/**
+ * `ledger`: one document per source document, written only by the executor
+ * (PRD section 7, "Ledger entry"). The dashboard's audit timeline reads this shape.
+ */
 export interface LedgerDoc {
   _id: ObjectId;
-  source_type: 'intent' | 'approved';
-  /** `_id` of the intent or approved document. Unique: one payout per source. */
-  source_id: ObjectId;
+  /**
+   * `"<collection>:<source _id as hex>"`, e.g. `intents:66f0…`. Unique: one payout
+   * per source. Also the idempotency key sent to the payment provider.
+   */
+  source_id: string;
+  source_collection: 'intents' | 'approved';
+  /** `_id` of the intent or approved document. */
+  source_doc_id: ObjectId;
   trace_id: string;
+  ticket_id: string;
   order_id: string;
   customer_id: string;
   amount_cents: number;
   currency: Currency;
-  /** Sent to the payment provider unchanged on every retry. */
-  idempotency_key: string;
   status: 'pending' | 'succeeded' | 'failed';
+  /** Set once the pre-payout checks pass. A pending entry with this set may already have been paid. */
+  checks_passed: boolean;
+  /** The executor instance that last claimed this entry. */
+  owner: string;
+  /** Provider calls made so far. */
+  attempts: number;
   provider: string;
   provider_refund_id?: string;
   failure_reason?: string;
   created_at: Date;
   updated_at: Date;
+}
+
+/** The ledger `source_id` for a source document. */
+export function ledgerSourceId(collection: LedgerDoc['source_collection'], id: ObjectId): string {
+  return `${collection}:${id.toHexString()}`;
 }
 
 /** `budgets`: one document per day, `_id` is the UTC date "YYYY-MM-DD". */

@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ObjectId } from 'mongodb';
-import { COLLECTIONS } from '@escrowops/shared';
+import { COLLECTIONS, ledgerSourceId } from '@escrowops/shared';
 import { Executor, FakeProvider, type ExecutorOptions } from '@escrowops/executor';
 import { useTestDb } from '../helpers/index.js';
 import { setUpAccess } from '../roles/role-helpers.js';
@@ -26,7 +26,7 @@ const ledger = () => ledgerOf(t().db);
 const settled = (sourceId: ObjectId) =>
   waitFor(
     async () => {
-      const e = await ledger().findOne({ source_id: sourceId });
+      const e = await ledger().findOne({ source_doc_id: sourceId });
       return e && e.status !== 'pending' ? e : undefined;
     },
     { what: `ledger entry for ${sourceId} to settle` },
@@ -67,13 +67,19 @@ describe('payout', () => {
 
     const entry = await settled(intent._id);
     expect(Date.now() - started).toBeLessThan(2000);
-    expect(entry).toMatchObject({ status: 'succeeded', source_type: 'intent', provider: 'fake' });
+    expect(entry).toMatchObject({
+      status: 'succeeded',
+      source_collection: 'intents',
+      source_id: ledgerSourceId('intents', intent._id),
+      ticket_id: intent.ticket_id,
+      provider: 'fake',
+    });
     expect(entry.provider_refund_id).toMatch(/^re_fake_/);
     expect(provider.calls).toHaveLength(1);
     expect(provider.calls[0]!.request).toMatchObject({
       paymentRef: order.payment_id,
       amountCents: 4200,
-      idempotencyKey: intent.idempotency_key,
+      idempotencyKey: ledgerSourceId('intents', intent._id),
     });
   });
 
@@ -81,7 +87,7 @@ describe('payout', () => {
     const order = await seedOrder(t().db);
     await startExecutor();
     const doc = await insertApproved(t().db, order, 500_000);
-    expect(await settled(doc._id)).toMatchObject({ status: 'succeeded', source_type: 'approved' });
+    expect(await settled(doc._id)).toMatchObject({ status: 'succeeded', source_collection: 'approved' });
     expect(provider.created).toHaveLength(1);
   });
 
@@ -149,7 +155,7 @@ describe('provider errors', () => {
     const intent = await insertIntent(t().db, order, 1500);
     await waitFor(async () => provider.calls.length >= 2, { what: 'two attempts' });
     await executor!.idle();
-    expect((await ledger().findOne({ source_id: intent._id }))?.status).toBe('pending');
+    expect((await ledger().findOne({ source_doc_id: intent._id }))?.status).toBe('pending');
   });
 
   it('I14: records a permanent error as failed and does not retry', async () => {
@@ -196,7 +202,7 @@ describe('recovery', () => {
       paymentRef: order.payment_id,
       amountCents: 2500,
       currency: 'usd',
-      idempotencyKey: intent.idempotency_key,
+      idempotencyKey: ledgerSourceId('intents', intent._id),
     });
     await ledger().insertOne(abandonedPending(intent, { checks_passed: true, attempts: 1 }));
 
@@ -226,5 +232,80 @@ describe('recovery', () => {
     provider.failTransiently(0);
     expect((await settled(intent._id)).status).toBe('succeeded');
     expect(provider.created).toHaveLength(1);
+  });
+});
+
+describe('review follow-ups (TEST_PLAN I12a to I12d, O2a)', () => {
+  it('I12a: an order with no payment_id is refused without calling the provider', async () => {
+    const order = await seedOrder(t().db, { payment_id: '' });
+    await startExecutor();
+    const entry = await settled((await insertIntent(t().db, order, 1000))._id);
+    expect(entry.status).toBe('failed');
+    expect(entry.failure_reason).toMatch(/^order_missing_payment_id/);
+    expect(provider.calls).toHaveLength(0);
+  });
+
+  it('I12b: a ticket paid as an intent is not paid again through approved', async () => {
+    const order = await seedOrder(t().db);
+    await startExecutor();
+    const intent = await insertIntent(t().db, order, 4000, { ticket_id: 'T-SAME' });
+    expect((await settled(intent._id)).status).toBe('succeeded');
+
+    const approved = await insertApproved(t().db, order, 60_000, { ticket_id: 'T-SAME' });
+    const second = await settled(approved._id);
+    expect(second.status).toBe('failed');
+    expect(second.failure_reason).toMatch(/^duplicate_ticket_payout/);
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it('I12c: the key sent to the provider is the ledger source_id, on every attempt', async () => {
+    const order = await seedOrder(t().db);
+    provider.failTransiently(2);
+    await startExecutor();
+    const intent = await insertIntent(t().db, order, 1500);
+    const entry = await settled(intent._id);
+    expect(provider.calls).toHaveLength(3);
+    expect(provider.calls.every((c) => c.request.idempotencyKey === entry.source_id)).toBe(true);
+    expect(entry.source_id).not.toBe(intent.idempotency_key);
+  });
+
+  it('I12d: a pending entry that throws on reconcile does not block the others or startup', async () => {
+    const order = await seedOrder(t().db);
+    const intents = [];
+    for (let i = 0; i < 3; i++) intents.push(await insertIntent(t().db, order, 1000 + i));
+    for (const intent of intents) await ledger().insertOne(abandonedPending(intent, { checks_passed: true, attempts: 1 }));
+
+    const poisoned = ledgerSourceId('intents', intents[0]!._id);
+    const inner = provider;
+    const flaky = {
+      name: 'fake',
+      refund: async (req: Parameters<FakeProvider['refund']>[0]) => {
+        if (req.idempotencyKey === poisoned) throw new Error('unexpected failure');
+        return inner.refund(req);
+      },
+    };
+    await startExecutor({ provider: flaky }); // Resolves: startup finished.
+
+    expect((await settled(intents[1]!._id)).status).toBe('succeeded');
+    expect((await settled(intents[2]!._id)).status).toBe('succeeded');
+    expect((await ledger().findOne({ source_id: poisoned }))?.status).toBe('pending');
+  });
+
+  it('O2a: after a reset, paying the same ticket again creates a new refund, not a replay', async () => {
+    const order = await seedOrder(t().db);
+    await startExecutor();
+    const first = await insertIntent(t().db, order, 2000, { ticket_id: 'T-REHEARSAL' });
+    expect((await settled(first._id)).status).toBe('succeeded');
+    await executor!.stop();
+
+    await clearRunData(t().db); // npm run reset; the provider keeps its history, as Stripe would.
+    const reseeded = await seedOrder(t().db, { _id: order._id, payment_id: order.payment_id }); // same seed data
+    await startExecutor();
+    const again = await insertIntent(t().db, reseeded, 2000, { ticket_id: 'T-REHEARSAL' });
+    // Same ticket and order, so the proposal key repeats; the provider key must not.
+    expect(again.idempotency_key).toBe(first.idempotency_key);
+    expect((await settled(again._id)).status).toBe('succeeded');
+    expect(provider.created).toHaveLength(2);
+    expect(provider.calls.filter((c) => c.outcome === 'replayed')).toHaveLength(0);
   });
 });
