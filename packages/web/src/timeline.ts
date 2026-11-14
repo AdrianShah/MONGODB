@@ -4,7 +4,7 @@
  * by time. Read-only, as escrow_dashboard.
  */
 import type { Db, Document } from 'mongodb';
-import { COLLECTIONS } from '@escrowops/shared';
+import { COLLECTIONS, verifyTrace, type ChainCheck } from '@escrowops/shared';
 import { rulesBroken } from '@escrowops/api';
 import type { TimelineEvent } from './types.js';
 
@@ -85,9 +85,10 @@ export function timelinePipeline(traceId: string): Document[] {
   ];
 }
 
-export async function loadTimeline(db: Db, traceId: string): Promise<TimelineEvent[]> {
+export async function loadTimeline(db: Db, traceId: string): Promise<{ events: TimelineEvent[]; integrity: ChainCheck }> {
+  const integrity = await verifyTrace(db, traceId);
   const rows = await db.collection(COLLECTIONS.agent_traces).aggregate(timelinePipeline(traceId)).toArray();
-  return rows.map((r) => {
+  const events = rows.map((r) => {
     const { at, source, kind, errInfo, ...rest } = r as Document & { at: Date; source: TimelineEvent['source']; kind: string };
     const rules = errInfo ? rulesBroken(errInfo) : [];
     return {
@@ -98,6 +99,7 @@ export async function loadTimeline(db: Db, traceId: string): Promise<TimelineEve
       detail: { ...rest, ...(rules.length ? { rules_broken: rules } : {}) },
     };
   });
+  return { events, integrity };
 }
 
 function describe(source: string, kind: string, r: Document, rules: string[]): string {

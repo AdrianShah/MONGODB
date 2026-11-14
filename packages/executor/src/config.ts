@@ -47,4 +47,15 @@ export function loadPaymentsConfig(env: Env = process.env): PaymentsConfig {
   return { payments };
 }
 
+/** E6: DAILY_AUTO_BUDGET_CENTS, the day's cap on auto refunds. Unset or 0 disables it. */
+export function loadDailyBudgetCents(env: Env = process.env): number {
+  const raw = env['DAILY_AUTO_BUDGET_CENTS']?.trim();
+  if (!raw) return 0;
+  const cents = Number(raw);
+  if (!Number.isSafeInteger(cents) || cents < 0) {
+    throw new InvalidEnvError('DAILY_AUTO_BUDGET_CENTS', `must be a whole number of cents, 0 to disable (got "${raw}")`);
+  }
+  return cents;
+}
+
 export { MissingEnvError };

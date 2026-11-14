@@ -5,3 +5,6 @@ export * from './db.js';
 export * from './policy.js';
 export * from './schema.js';
 export * from './roles.js';
+export * from './chain.js';
+export * from './audit.js';
+export * from './embed.js';

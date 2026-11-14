@@ -26,6 +26,7 @@ const env = {
   API_PORT: String(BASE + 1),
   APPROVAL_URL: `http://127.0.0.1:${BASE + 1}`,
   DASHBOARD_PORT: String(BASE + 2),
+  DAILY_AUTO_BUDGET_CENTS: '500000',
   NO_COLOR: '1',
 };
 Object.assign(process.env, env);
@@ -101,11 +102,15 @@ async function main(): Promise<number> {
         await until('9 auto refunds paid', async () => (await ledger.countDocuments({ status: 'succeeded' })) >= 9);
         step('batch: 9 auto refunds paid, 3 held, the $5,000 refusal printed');
 
-        const pipeline = (await (await fetch(`${DASH}/api/pipeline`)).json()) as { tickets: Array<{ ticket_id: string; stage: string; review?: { id: string } }> };
-        const held = pipeline.tickets.find((t) => t.ticket_id === 'T-1011');
-        check(held?.stage === 'held' && held.review, `T-1011 is ${held?.stage}, expected held`);
         const a = await login('approver-a');
         const b = await login('approver-b');
+        const pipeline = (await (await fetch(`${DASH}/api/pipeline`, { headers: { authorization: `Bearer ${a}` } })).json()) as {
+          tickets: Array<{ ticket_id: string; stage: string; review?: { id: string } }>;
+          budget: { spent_cents: number } | null;
+        };
+        const held = pipeline.tickets.find((t) => t.ticket_id === 'T-1011');
+        check(held?.stage === 'held' && held.review, `T-1011 is ${held?.stage}, expected held`);
+        check(pipeline.budget?.spent_cents === 132_043, `daily budget shows ${pipeline.budget?.spent_cents}, expected 132043 (the 9 auto refunds)`);
         check((await (await approve(a, held.review.id)).json() as { outcome: string }).outcome === 'recorded', 'first approval was not recorded');
         check((await approve(a, held.review.id)).status === 409, 'second approval by the same approver was not refused');
         check((await (await approve(b, held.review.id)).json() as { outcome: string }).outcome === 'promoted', 'second approver did not promote');
@@ -142,6 +147,10 @@ async function main(): Promise<number> {
         check(succeeded.length === 11, `expected 11 payouts (9 auto, T-1011, demo:kill), got ${succeeded.length}`);
         check(calls.some((c) => c.outcome === 'replayed'), 'the reconcile did not replay the killed payout');
         step(`invariants: ${succeeded.length} payouts, ${created.length} refunds at the provider, none duplicated`);
+
+        const audit = await run('audit:verify');
+        check(audit.code === 0, `audit:verify found a problem\n${audit.output}`);
+        step('audit: every hash chain verifies');
 
         const seconds = (Date.now() - started) / 1000;
         results.push({ run: n, ok: true, seconds });

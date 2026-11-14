@@ -92,6 +92,9 @@ export interface AgentTraceDoc {
   output?: unknown;
   text?: string;
   created_at: Date;
+  /** S9 hash chain per trace_id (see chain.ts). */
+  prev_hash?: string;
+  hash?: string;
 }
 
 /** One piece of evidence the agent cites. The validator only requires an object. */
@@ -150,6 +153,9 @@ export interface ApprovalDoc {
   decision: 'approve' | 'reject';
   note?: string;
   created_at: Date;
+  /** S9 hash chain per review_id (see chain.ts). */
+  prev_hash?: string;
+  hash?: string;
 }
 
 export interface ApprovalEntry {
@@ -215,6 +221,19 @@ export interface BudgetDoc {
   updated_at?: Date;
 }
 
+/** `precedents` (A7): a past resolved dispute, embedded for Atlas Vector Search. */
+export interface PrecedentDoc {
+  _id: string;
+  category: string;
+  summary: string;
+  outcome: 'refunded' | 'partial' | 'declined';
+  refund_cents: number;
+  /** What the decision rested on, e.g. "refund the damaged line item only". */
+  rationale: string;
+  decided_at: Date;
+  embedding: number[];
+}
+
 /** `executor_state`: one document per watched stream, `_id` is the stream name. */
 export interface ExecutorStateDoc {
   _id: string;
@@ -240,6 +259,7 @@ export interface CollectionDocs {
   ledger: LedgerDoc;
   budgets: BudgetDoc;
   executor_state: ExecutorStateDoc;
+  precedents: PrecedentDoc;
 }
 
 // Compile-time check that CollectionDocs covers exactly the names in COLLECTIONS.

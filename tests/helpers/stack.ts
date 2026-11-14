@@ -25,14 +25,23 @@ export interface Stack {
   stop(): Promise<void>;
 }
 
-export async function startStack(uri: string, opts: { prefix?: string; dashboardPort?: number; distDir?: string } = {}): Promise<Stack> {
+export async function startStack(
+  uri: string,
+  opts: { prefix?: string; dashboardPort?: number; distDir?: string; requireLogin?: boolean; dailyBudgetCents?: number } = {},
+): Promise<Stack> {
   const t = await createTestDb(uri, opts.prefix ?? 'stack');
   await setUpAccess(t);
   await seedDatabase(t.db);
   const quiet = () => {};
 
   const provider = new FakeProvider();
-  const executor = new Executor({ db: (await t.connectAsRole('executor')).db(t.dbName), provider, log: quiet, staleReconcileEveryMs: 0 });
+  const executor = new Executor({
+    db: (await t.connectAsRole('executor')).db(t.dbName),
+    provider,
+    log: quiet,
+    staleReconcileEveryMs: 0,
+    ...(opts.dailyBudgetCents ? { dailyBudgetCents: opts.dailyBudgetCents } : {}),
+  });
   await executor.start();
 
   const approverClient = await t.connectAsRole('approver');
@@ -46,6 +55,7 @@ export async function startStack(uri: string, opts: { prefix?: string; dashboard
     db: dashClient.db(t.dbName),
     approvalUrl,
     log: quiet,
+    requireLogin: opts.requireLogin ?? true,
     ...(opts.distDir ? { distDir: opts.distDir } : {}),
   });
   await dashboard.listen({ port: opts.dashboardPort ?? 0, host: '127.0.0.1' });

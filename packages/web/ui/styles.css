@@ -94,6 +94,12 @@ input, select { font: inherit; background: var(--panel-2); color: var(--text); b
 .actions .approve { background: var(--green-deep); border-color: var(--green-deep); flex: 1; }
 .actions .reject { flex: 1; }
 
+.locked { flex: 1; display: grid; place-content: center; text-align: center; padding: 48px 16px; }
+.locked h2 { margin: 0 0 8px; font-size: 1.2rem; }
+.integrity { font-size: 0.82rem; margin: 12px 0 0; padding: 8px 10px; border-radius: 8px; }
+.integrity.ok { background: rgba(0, 237, 100, 0.1); color: var(--green); }
+.integrity.broken { background: rgba(255, 107, 107, 0.12); color: var(--red); }
+
 .drawer-backdrop { position: fixed; inset: 0; background: rgba(3, 7, 15, 0.55); display: flex; justify-content: flex-end; }
 .drawer { width: min(560px, 100vw); height: 100%; background: var(--panel); border-left: 1px solid var(--line); padding: 18px 20px; overflow-y: auto; }
 .drawer > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }

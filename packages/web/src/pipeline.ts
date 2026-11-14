@@ -7,13 +7,14 @@ import {
   COLLECTIONS,
   type AgentTraceDoc,
   type ApprovedDoc,
+  type BudgetDoc,
   type IntentDoc,
   type LedgerDoc,
   type ReviewQueueDoc,
   type TicketDoc,
 } from '@escrowops/shared';
 import type { ReviewDoc, ReviewService } from '@escrowops/api';
-import type { LedgerSummary, Stage, TicketCard } from './types.js';
+import type { BudgetSummary, LedgerSummary, Stage, TicketCard } from './types.js';
 
 const byTrace = <T extends { trace_id: string }>(docs: T[]) => {
   const map = new Map<string, T[]>();
@@ -97,17 +98,26 @@ function stageOf(run: {
 }): Stage {
   if (run.ledger?.status === 'succeeded') return 'paid';
   if (run.ledger?.status === 'pending') return 'paying';
-  if (run.ledger?.status === 'failed') return 'failed';
   if (run.promoted) return 'approved';
+  // A review outranks a failed ledger entry: an auto refund diverted by the daily budget (E6)
+  // has a failed intent payout and a pending review for the same run.
   if (run.review) {
     if (run.review.status === 'pending') return 'held';
     if (run.review.status === 'approved') return 'approved';
     return run.review.status; // rejected | blocked
   }
+  if (run.ledger?.status === 'failed') return 'failed';
   if (run.intent) return 'proposed';
   if (run.runTraces.some((t) => t.kind === 'decision' && t.tool === 'decline_refund')) return 'declined';
   if (run.runTraces.some((t) => t.kind === 'error')) return 'error';
   return run.runTraces.length ? 'working' : 'open';
+}
+
+/** Today's auto-refund budget (E6), if the executor has started one. */
+export async function loadBudget(db: Db): Promise<BudgetSummary | null> {
+  const day = new Date().toISOString().slice(0, 10);
+  const doc = await db.collection<BudgetDoc>(COLLECTIONS.budgets).findOne({ _id: day });
+  return doc ? { day, cap_cents: doc.cap_cents, spent_cents: doc.spent_cents } : null;
 }
 
 function summary(e: LedgerDoc): LedgerSummary {

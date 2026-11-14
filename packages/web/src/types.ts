@@ -51,4 +51,10 @@ export interface TimelineEvent {
   detail?: unknown;
 }
 
-export type PipelineMessage = { type: 'pipeline'; tickets: TicketCard[] };
+export interface BudgetSummary {
+  day: string;
+  cap_cents: number;
+  spent_cents: number;
+}
+
+export type PipelineMessage = { type: 'pipeline'; tickets: TicketCard[]; budget: BudgetSummary | null };

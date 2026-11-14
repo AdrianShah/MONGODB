@@ -27,21 +27,32 @@ test.afterAll(async () => {
 const propose = (ticket: string, order: string, cents: number) =>
   resolveTicket(ticket, { db: agentDb, model: 'claude-sonnet-5-5', createMessage: scriptedModel(proposeScript(ticket, order, cents)).createMessage });
 
-async function approverPage(browser: Browser, approver: string): Promise<Page> {
-  const page = await (await browser.newContext()).newPage();
-  await page.goto('/');
-  await expect(page.getByTestId('feed-status')).toHaveText(/Live/);
+async function signIn(page: Page, approver: string) {
   await page.getByTestId('login-approver').selectOption(approver);
   await page.getByTestId('login-password').fill(`${approver}-dev-password`);
   await page.getByTestId('login-submit').click();
   await expect(page.getByTestId('signed-in-as')).toContainText(approver);
+  await expect(page.getByTestId('feed-status')).toHaveText(/Live/);
+}
+
+async function approverPage(browser: Browser, approver: string, before?: (page: Page) => Promise<void>): Promise<Page> {
+  const page = await (await browser.newContext()).newPage();
+  await before?.(page);
+  await page.goto('/');
+  await signIn(page, approver);
   return page;
 }
 
 const card = (page: Page, column: string, ticket: string) => page.getByTestId(`column-${column}`).getByTestId(`ticket-${ticket}`);
 
-test('U1: pipeline cards move through the stages without a reload', async ({ page }) => {
+test('the board is hidden until an approver signs in', async ({ page }) => {
   await page.goto('/');
+  await expect(page.getByTestId('locked')).toBeVisible();
+  await expect(page.getByTestId('column-intake')).toHaveCount(0);
+});
+
+test('U1: pipeline cards move through the stages without a reload', async ({ browser }) => {
+  const page = await approverPage(browser, 'approver-a');
   await expect(card(page, 'intake', 'T-1001')).toBeVisible();
   await propose('T-1001', 'O-5101', 8900);
   await expect(card(page, 'paid', 'T-1001')).toBeVisible();
@@ -91,6 +102,7 @@ test.describe('dual control on a $5,000 refund', () => {
 
   test('U6: the audit timeline shows every stage in order, ending with the refund ID', async () => {
     await card(a, 'paid', 'T-1011').getByTestId('open-timeline').click();
+    await expect(a.getByTestId('integrity')).toContainText('Hash chain verified');
     const events = a.getByTestId('timeline').getByTestId('timeline-event');
     await expect(events.last()).toContainText('re_fake_');
     const kinds = await events.evaluateAll((els) => els.map((e) => `${e.getAttribute('data-source')}:${e.getAttribute('data-kind')}`));
@@ -118,14 +130,14 @@ test.describe('dual control on a $5,000 refund', () => {
   });
 });
 
-test('U9: after the WebSocket drops and reconnects, the UI catches up with no missing cards', async ({ page }) => {
+test('U9: after the WebSocket drops and reconnects, the UI catches up with no missing cards', async ({ browser }) => {
   const sockets: WebSocketRoute[] = [];
-  await page.routeWebSocket(/\/ws\/pipeline$/, (ws) => {
-    ws.connectToServer();
-    sockets.push(ws);
-  });
-  await page.goto('/');
-  await expect(page.getByTestId('feed-status')).toHaveText(/Live/);
+  const page = await approverPage(browser, 'approver-a', (p) =>
+    p.routeWebSocket(/\/ws\/pipeline$/, (ws) => {
+      ws.connectToServer();
+      sockets.push(ws);
+    }),
+  );
 
   await sockets.at(-1)!.close();
   await expect(page.getByTestId('feed-status')).toHaveText(/Reconnecting|Live/);

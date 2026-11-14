@@ -12,8 +12,9 @@ import { message, proposeScript, scriptedModel, text, toolUse } from '../agent/f
 import { waitFor } from '../executor/fixtures.js';
 
 let s: Stack;
+let viewer: string; // a signed-in approver's session cookie; viewing needs one
 
-const get = async <T>(path: string, init?: RequestInit) => (await fetch(`${s.dashboardUrl}${path}`, init)).json() as Promise<T>;
+const get = async <T>(path: string) => (await fetch(`${s.dashboardUrl}${path}`, { headers: { cookie: viewer } })).json() as Promise<T>;
 const pipeline = async () => (await get<{ tickets: TicketCard[] }>('/api/pipeline')).tickets;
 const ticket = async (id: string) => (await pipeline()).find((t) => t.ticket_id === id)!;
 const agent = (id: string, turns: Parameters<typeof scriptedModel>[0]) =>
@@ -32,10 +33,23 @@ const approve = (cookie: string, reviewId: string) =>
   fetch(`${s.dashboardUrl}/api/reviews/${reviewId}/approve`, { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: '{}' });
 
 beforeAll(async () => {
-  s = await startStack(testServerUri(), { prefix: 'dashboard' });
+  s = await startStack(testServerUri(), { prefix: 'dashboard', dailyBudgetCents: 500_000 });
+  viewer = await loginViaDashboard('approver-b');
 });
 afterAll(async () => {
   await s?.stop();
+});
+
+describe('access', () => {
+  it('pipeline, timeline and live feed need an approver session', async () => {
+    expect((await fetch(`${s.dashboardUrl}/api/config`)).status).toBe(200);
+    expect((await fetch(`${s.dashboardUrl}/api/pipeline`)).status).toBe(401);
+    expect((await fetch(`${s.dashboardUrl}/api/timeline/x`)).status).toBe(401);
+    expect((await fetch(`${s.dashboardUrl}/api/pipeline`, { headers: { cookie: 'escrowops_session=forged' } })).status).toBe(401);
+    const anonymous = new WebSocket(`${s.dashboardUrl.replace('http', 'ws')}/ws/pipeline`);
+    await expect(new Promise((ok, fail) => { anonymous.on('open', ok); anonymous.on('error', fail); })).rejects.toThrow(/401/);
+    expect((await fetch(`${s.dashboardUrl}/api/pipeline`, { headers: { cookie: viewer } })).status).toBe(200);
+  });
 });
 
 describe('pipeline (S6)', () => {
@@ -59,6 +73,9 @@ describe('pipeline (S6)', () => {
       return t.stage === 'paid' ? t : undefined;
     }, { what: 'T-1001 paid' });
     expect(paid.ledger).toMatchObject({ status: 'succeeded', provider: 'fake', amount_cents: 8900 });
+    // E6: the auto refund was reserved against today's budget.
+    const { budget } = await get<{ budget: { spent_cents: number; cap_cents: number } }>('/api/pipeline');
+    expect(budget).toMatchObject({ cap_cents: 500_000, spent_cents: 8900 });
 
     expect(await ticket('T-1009')).toMatchObject({
       stage: 'held',
@@ -69,7 +86,7 @@ describe('pipeline (S6)', () => {
   });
 
   it('pushes the pipeline over /ws/pipeline on connect and after every change', async () => {
-    const ws = new WebSocket(`${s.dashboardUrl.replace('http', 'ws')}/ws/pipeline`);
+    const ws = new WebSocket(`${s.dashboardUrl.replace('http', 'ws')}/ws/pipeline`, { headers: { cookie: viewer } });
     const msgs: PipelineMessage[] = [];
     ws.on('message', (raw) => msgs.push(JSON.parse(String(raw))));
     await waitFor(async () => msgs.length > 0, { what: 'initial pipeline' });
@@ -112,7 +129,12 @@ describe('audit timeline (S7)', () => {
     await approve(await loginViaDashboard('approver-b'), reviewId);
     await waitFor(async () => (await ticket('T-1011')).stage === 'paid', { what: 'T-1011 paid' });
 
-    const { events } = await get<{ events: TimelineEvent[] }>(`/api/timeline/${run.trace_id}`);
+    const { events, integrity } = await get<{ events: TimelineEvent[]; integrity: { ok: boolean; checked: number } }>(
+      `/api/timeline/${run.trace_id}`,
+    );
+    // S9: the agent's trace and both approvals verify as an unbroken hash chain.
+    expect(integrity.ok).toBe(true);
+    expect(integrity.checked).toBeGreaterThanOrEqual(8);
     const steps = events.map((e) => `${e.source}:${e.kind}`);
     const order = [
       'agent_traces:tool_call',

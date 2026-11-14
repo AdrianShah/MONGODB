@@ -18,12 +18,12 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import type { ChangeStream, Db, MongoClient } from 'mongodb';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { ReviewService } from '@escrowops/api';
-import { loadPipeline } from './pipeline.js';
+import { loadBudget, loadPipeline } from './pipeline.js';
 import { loadTimeline } from './timeline.js';
 import type { PipelineMessage } from './types.js';
 
 export const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url));
-const WATCHED = ['agent_traces', 'intents', 'review_queue', 'approvals', 'approved', 'ledger', 'tickets'];
+const WATCHED = ['agent_traces', 'intents', 'review_queue', 'approvals', 'approved', 'ledger', 'tickets', 'budgets'];
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -41,19 +41,63 @@ export interface DashboardOptions {
   approvalUrl: string;
   /** Built UI directory; omitted or missing means API only (use the Vite dev server). */
   distDir?: string;
+  /**
+   * When true (the default), the pipeline, timeline and live feed need an approver session,
+   * checked against the approval service. DASHBOARD_PUBLIC=1 turns this off.
+   */
+  requireLogin?: boolean;
   log?: (line: string) => void;
+}
+
+/** Asks the approval service who owns a session, and remembers the answer briefly. */
+function sessionChecker(approvalUrl: string) {
+  const cache = new Map<string, { approver: string | null; until: number }>();
+  return async (headers: { cookie?: string | string[]; authorization?: string }): Promise<string | null> => {
+    const cookie = typeof headers.cookie === 'string' ? headers.cookie : undefined;
+    const key = `${headers.authorization ?? ''}|${cookie ?? ''}`;
+    if (key === '|') return null;
+    const hit = cache.get(key);
+    if (hit && hit.until > Date.now()) return hit.approver;
+    let approver: string | null = null;
+    try {
+      const res = await fetch(new URL('/api/me', approvalUrl), {
+        headers: { ...(cookie ? { cookie } : {}), ...(headers.authorization ? { authorization: headers.authorization } : {}) },
+      });
+      if (res.ok) approver = ((await res.json()) as { approver_id: string }).approver_id;
+    } catch {
+      return null; // approval service down: deny, do not cache
+    }
+    cache.set(key, { approver, until: Date.now() + 30_000 });
+    return approver;
+  };
 }
 
 export async function buildDashboardServer(opts: DashboardOptions): Promise<FastifyInstance> {
   const log = opts.log ?? ((line) => console.log(`${new Date().toISOString()} ${line}`));
   const reviews = new ReviewService(opts.client, opts.db); // read-only use: toCards
   const app = Fastify({ logger: false });
+  const requireLogin = opts.requireLogin ?? true;
+  const whoIs = sessionChecker(opts.approvalUrl);
+  const guard = async (req: FastifyRequest, reply: FastifyReply) => {
+    if (requireLogin && !(await whoIs(req.headers))) {
+      return reply.code(401).send({ error: 'unauthenticated', message: 'sign in as an approver to view the dashboard' });
+    }
+  };
+  const snapshot = async (): Promise<PipelineMessage> => ({
+    type: 'pipeline',
+    tickets: await loadPipeline(opts.db, reviews),
+    budget: await loadBudget(opts.db),
+  });
 
   app.get('/api/health', async () => ({ ok: true }));
-  app.get('/api/pipeline', async () => ({ tickets: await loadPipeline(opts.db, reviews) }));
-  app.get<{ Params: { traceId: string } }>('/api/timeline/:traceId', async (req) => ({
+  app.get('/api/config', async () => ({ requireLogin }));
+  app.get('/api/pipeline', { preHandler: guard }, async () => {
+    const { tickets, budget } = await snapshot();
+    return { tickets, budget };
+  });
+  app.get<{ Params: { traceId: string } }>('/api/timeline/:traceId', { preHandler: guard }, async (req) => ({
     trace_id: req.params.traceId,
-    events: await loadTimeline(opts.db, req.params.traceId),
+    ...(await loadTimeline(opts.db, req.params.traceId)),
   }));
 
   // Approval routes go to the approval service unchanged, cookies included.
@@ -88,7 +132,7 @@ export async function buildDashboardServer(opts: DashboardOptions): Promise<Fast
   let latest: PipelineMessage | undefined;
   const send = (ws: WebSocket, msg: PipelineMessage) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(msg));
   const refresh = async () => {
-    latest = { type: 'pipeline', tickets: await loadPipeline(opts.db, reviews) };
+    latest = await snapshot();
     for (const ws of clients) send(ws, latest);
   };
   let timer: NodeJS.Timeout | undefined;
@@ -115,9 +159,14 @@ export async function buildDashboardServer(opts: DashboardOptions): Promise<Fast
   };
   let watching: Promise<void> | undefined;
 
-  app.server.on('upgrade', (req, socket, head) => {
+  app.server.on('upgrade', async (req, socket, head) => {
     if (new URL(req.url ?? '/', 'http://localhost').pathname !== '/ws/pipeline') {
       socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    if (requireLogin && !(await whoIs(req.headers))) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
     }
