@@ -158,8 +158,11 @@ export class ReviewService {
         status: doc.status,
         reason: doc.reason,
         evidence: doc.evidence,
-        rules_broken: rulesBroken(err?.errInfo),
+        rules_broken: rulesBrokenFor(doc),
         ...(err?.errmsg ? { validator_message: err.errmsg } : {}),
+        ...(doc.hold_reasons?.length ? { hold_reasons: doc.hold_reasons } : {}),
+        ...(doc.precedent_check ? { precedent_check: doc.precedent_check } : {}),
+        ...(doc.precedents_cited?.length ? { precedents_cited: doc.precedents_cited } : {}),
         required_approvals: doc.required_approvals,
         approvals: mine.map((a) => ({
           approver_id: a.approver_id,
@@ -220,6 +223,14 @@ export class ReviewService {
   }
 }
 
+/** Rules for the card; the precedent ceiling's `$expr` is named for what it is. */
+function rulesBrokenFor(doc: ReviewDoc): string[] {
+  const rules = rulesBroken(doc.validator_error?.errInfo);
+  const deviated = doc.hold_reasons?.some((r) => r.startsWith('precedent_deviation'));
+  if (!deviated) return rules;
+  return [...new Set([...rules.filter((r) => r !== '$expr'), 'precedent_deviation'])];
+}
+
 /** The `approved` document for a review: exactly the fields the validator allows. */
 function promotion(review: ReviewDoc, approves: ApprovalDoc[], now: Date): ApprovedDoc {
   return {
@@ -235,6 +246,8 @@ function promotion(review: ReviewDoc, approves: ApprovalDoc[], now: Date): Appro
     policy_version: review.policy_version,
     idempotency_key: review.idempotency_key,
     created_at: now,
+    ...(review.precedent_check ? { precedent_check: review.precedent_check } : {}),
+    ...(review.precedents_cited?.length ? { precedents_cited: review.precedents_cited } : {}),
     review_id: review._id,
     approvals: approves.map((a) => ({ approver_id: a.approver_id, approved_at: a.created_at })),
   };

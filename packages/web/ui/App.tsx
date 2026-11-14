@@ -12,6 +12,7 @@ import {
   type TimelineEvent,
   type TimelineIntegrity,
 } from './api.js';
+import { Precedents } from './Precedents.js';
 
 const COLUMNS: Array<{ id: string; title: string; hint: string; stages: Stage[] }> = [
   { id: 'intake', title: 'Intake', hint: 'Waiting for or being worked by the agent', stages: ['open', 'working'] },
@@ -284,6 +285,7 @@ function Review({ review, me }: { review: ReviewCard; me: string | null }) {
         </p>
       )}
       <p className="reason" data-testid="reason">{review.reason}</p>
+      <Precedents review={review} />
       {review.evidence.length > 0 && (
         <ul className="evidence" data-testid="evidence">
           {review.evidence.map((e, i) => (

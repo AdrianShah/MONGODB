@@ -119,6 +119,35 @@ export interface RefundProposal {
   /** Hash of ticket ID and order ID (A4). Unique per collection. */
   idempotency_key: string;
   created_at: Date;
+  /**
+   * A7: the precedent ceiling this amount was checked against, computed by the tool layer
+   * from the ticket text (not from the model). Required on `intents`, whose validator refuses
+   * an amount above `ceiling_cents`.
+   */
+  precedent_check?: PrecedentCheck;
+  /** A7: the precedents the agent cited as evidence, with their similarity and amounts. */
+  precedents_cited?: PrecedentRef[];
+}
+
+/** A precedent as recorded on a proposal. */
+export interface PrecedentRef {
+  precedent_id: string;
+  /** Similarity to the ticket, or null when the agent cited one the search did not return. */
+  score: number | null;
+  refund_cents: number | null;
+  outcome: string | null;
+}
+
+/** A7 deviation guard (see precedent.ts). */
+export interface PrecedentCheck {
+  /** Largest amount the comparable precedents support, or null when there are none. */
+  ceiling_cents: number | null;
+  /** ceiling = multiplier x the largest refund among `basis`. */
+  multiplier: number;
+  /** The most similar refunded precedents the ceiling rests on. */
+  basis: PrecedentRef[];
+  /** How they were found, e.g. "atlas_vector_search:voyage-3.5". */
+  method: string;
 }
 
 /** `intents`: auto-approvable proposals. Exactly the PRD validator's fields, nothing else. */
@@ -138,7 +167,10 @@ export interface ReviewQueueDoc extends RefundProposal {
   tier: Tier;
   required_approvals: number;
   status: 'pending' | 'approved' | 'rejected' | 'blocked';
-  validator_error: ValidatorErrorRecord;
+  /** Set when the server refused the proposal as an automatic refund. */
+  validator_error?: ValidatorErrorRecord;
+  /** Plain-language reasons this proposal was held, e.g. a precedent deviation (A7). */
+  hold_reasons?: string[];
   updated_at?: Date;
 }
 
@@ -231,7 +263,10 @@ export interface PrecedentDoc {
   /** What the decision rested on, e.g. "refund the damaged line item only". */
   rationale: string;
   decided_at: Date;
+  /** Vector for Atlas Vector Search, made by `embedding_model` (Voyage, or the local hash). */
   embedding: number[];
+  /** Which model made `embedding`; absent on documents seeded before Voyage support (= local). */
+  embedding_model?: string;
 }
 
 /** `executor_state`: one document per watched stream, `_id` is the stream name. */

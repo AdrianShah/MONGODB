@@ -11,9 +11,14 @@ import {
 } from 'mongodb';
 import {
   COLLECTIONS,
+  embeddingConfig,
   ledgerSourceId,
+  precedentCheck,
+  precedentDeviation,
   tierFor,
   type BudgetDoc,
+  type EmbeddingConfig,
+  type TicketDoc,
   type ExecutorStateDoc,
   type IntentDoc,
   type OrderDoc,
@@ -43,6 +48,11 @@ export interface ExecutorOptions {
    * review_queue for one approver. Undefined or 0 disables the budget.
    */
   dailyBudgetCents?: number;
+  /**
+   * A7: embedder for the executor's own precedent re-check of auto refunds. Default: Voyage when
+   * VOYAGE_API_KEY is set, otherwise the local embedding.
+   */
+  embedding?: EmbeddingConfig;
 }
 
 const SOURCES: SourceCollection[] = [COLLECTIONS.intents, COLLECTIONS.approved];
@@ -82,6 +92,7 @@ export class Executor {
   private readonly state: Collection<ExecutorStateDoc>;
   private readonly budgets: Collection<BudgetDoc & { reservations?: string[] }>;
   private readonly dailyBudgetCents: number;
+  private readonly embedding: EmbeddingConfig;
 
   private stopped = false;
   private tail: Promise<void> = Promise.resolve();
@@ -105,6 +116,7 @@ export class Executor {
     this.state = this.db.collection<ExecutorStateDoc>(COLLECTIONS.executor_state);
     this.budgets = this.db.collection<BudgetDoc & { reservations?: string[] }>(COLLECTIONS.budgets);
     this.dailyBudgetCents = opts.dailyBudgetCents ?? 0;
+    this.embedding = opts.embedding ?? embeddingConfig();
   }
 
   /**
@@ -306,6 +318,9 @@ export class Executor {
         this.log(`[executor] refused ${label(entry)} ${dollars(entry.amount_cents)}: ${failure}`);
         return;
       }
+      if (entry.source_collection === 'intents' && !(await this.checkPrecedent(entry))) {
+        return; // Diverted to review_queue.
+      }
       if (entry.source_collection === 'intents' && this.dailyBudgetCents > 0 && !(await this.reserveBudget(entry))) {
         return; // Diverted to review_queue.
       }
@@ -343,12 +358,44 @@ export class Executor {
     } catch (err) {
       if (isDuplicateKey(err)) return true; // Already reserved by an earlier attempt.
       if (!(err instanceof MongoServerError) || err.code !== 121) throw err;
-      await this.divertToReview(entry, err, day);
+      await this.divertToReview(entry, {
+        code: 121,
+        errmsg: `daily auto-refund budget for ${day} exhausted: ${err.errmsg ?? err.message}`,
+        errInfo: err.errInfo,
+        failure_reason: 'budget_exhausted: daily auto-refund budget spent; diverted to review_queue',
+        log: `daily budget spent: ${label(entry)} ${dollars(entry.amount_cents)} diverted to review_queue (needs 1 approver)`,
+      });
       return false;
     }
   }
 
-  private async divertToReview(entry: ExecutorLedgerDoc, err: MongoServerError, day: string) {
+  /**
+   * A7: re-derive the precedent ceiling from the ticket and the precedents (neither of which the
+   * agent can write) instead of trusting the one recorded on the intent, which the validator
+   * checks only for consistency. An amount above it is diverted to review_queue. No precedents
+   * at all means no ceiling. Returns false when diverted.
+   */
+  private async checkPrecedent(entry: ExecutorLedgerDoc): Promise<boolean> {
+    if (!(await this.db.collection(COLLECTIONS.precedents).findOne({}, { projection: { _id: 1 } }))) return true;
+    const ticket = await this.db.collection<TicketDoc>(COLLECTIONS.tickets).findOne({ _id: entry.ticket_id });
+    const { check } = ticket ? await precedentCheck(this.db, ticket, { embedding: this.embedding, warn: this.log }) : { check: undefined };
+    const deviation = ticket
+      ? precedentDeviation(entry.amount_cents, check)
+      : `precedent_check_unavailable: ticket ${entry.ticket_id} not found, so the precedent ceiling cannot be re-derived`;
+    if (!deviation) return true;
+    await this.divertToReview(entry, {
+      errmsg: `executor precedent re-check (${check?.method ?? 'none'}): ${deviation}`,
+      hold_reasons: [deviation],
+      failure_reason: `${deviation.split(':')[0]}: diverted to review_queue`,
+      log: `precedent re-check failed: ${label(entry)} ${dollars(entry.amount_cents)} diverted to review_queue (needs 1 approver): ${deviation}`,
+    });
+    return false;
+  }
+
+  private async divertToReview(
+    entry: ExecutorLedgerDoc,
+    why: { errmsg: string; errInfo?: unknown; code?: number; hold_reasons?: string[]; failure_reason: string; log: string },
+  ) {
     const intent = await this.db.collection<IntentDoc>(COLLECTIONS.intents).findOne({ _id: entry.source_doc_id });
     if (!intent) throw new Error(`intent ${entry.source_id} not found to divert`);
     const review: ReviewQueueDoc = {
@@ -357,15 +404,17 @@ export class Executor {
       tier: tierFor(intent.amount_cents),
       required_approvals: 1,
       status: 'pending',
-      validator_error: { code: 121, errmsg: `daily auto-refund budget for ${day} exhausted: ${err.errmsg ?? err.message}`, errInfo: err.errInfo },
+      // code 0: refused by the executor's own check rather than a validator.
+      validator_error: { code: why.code ?? 0, errmsg: why.errmsg, ...(why.errInfo === undefined ? {} : { errInfo: why.errInfo }) },
+      ...(why.hold_reasons?.length ? { hold_reasons: why.hold_reasons } : {}),
     };
     try {
       await this.db.collection<ReviewQueueDoc>(COLLECTIONS.review_queue).insertOne(review);
     } catch (insertErr) {
       if (!isDuplicateKey(insertErr)) throw insertErr; // Already diverted by an earlier attempt.
     }
-    await this.finish(entry, { status: 'failed', failure_reason: `budget_exhausted: daily auto-refund budget spent; diverted to review_queue` });
-    this.log(`[executor] daily budget spent: ${label(entry)} ${dollars(entry.amount_cents)} diverted to review_queue (needs 1 approver)`);
+    await this.finish(entry, { status: 'failed', failure_reason: why.failure_reason });
+    this.log(`[executor] ${why.log}`);
   }
 
   /** E5: the checks a validator cannot express because they need another document. */

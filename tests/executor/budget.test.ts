@@ -69,7 +69,7 @@ describe('daily auto-refund budget (E6)', () => {
 
     const review = await t().db.collection<ReviewQueueDoc>(COLLECTIONS.review_queue).findOne({ ticket_id: b.ticket_id });
     expect(review).toMatchObject({ status: 'pending', required_approvals: 1, amount_cents: 4_000, idempotency_key: b.idempotency_key });
-    expect(review?.validator_error.code).toBe(121);
+    expect(review?.validator_error?.code).toBe(121);
   });
 
   it('a diverted refund is paid once a human approves it, outside the budget', async () => {

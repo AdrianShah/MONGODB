@@ -21,7 +21,9 @@ import {
   applySchema,
   connectAdmin,
   connectAs,
+  embeddingConfig,
   ensureUsers,
+  ensureVectorIndex,
   hasChanges,
   loadConfigOrExit,
   stripCredentials,
@@ -59,6 +61,9 @@ async function main(): Promise<number> {
   try {
     const schema = await applySchema(admin.db(config.dbName));
     report('Schema', schema);
+    const embedding = embeddingConfig();
+    const vectorIndex = await ensureVectorIndex(admin.db(config.dbName), embedding.dimensions);
+    console.log(`Vector index: ${vectorIndex} (${embedding.model}, ${embedding.dimensions} dims)`);
 
     let roles: ChangeSummary;
     let users: ChangeSummary;

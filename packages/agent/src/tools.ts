@@ -12,9 +12,15 @@ import type Anthropic from '@anthropic-ai/sdk';
 import {
   COLLECTIONS,
   REQUIRED_APPROVALS,
+  precedentCheck,
+  precedentDeviation,
+  precedentRef,
   searchPrecedents,
   tierFor,
   type CustomerDoc,
+  type PrecedentDoc,
+  type PrecedentHit,
+  type PrecedentRef,
   type Evidence,
   type IntentDoc,
   type OrderDoc,
@@ -138,6 +144,8 @@ export type Decision =
       rules: string[];
       /** The server's reasons, e.g. "amount_cents: 500000 — maximum 50000". */
       violations: string[];
+      /** e.g. a precedent deviation (A7). */
+      hold_reasons: string[];
     }
   | { status: 'already_proposed'; amount_cents: number }
   | { status: 'declined'; reason: string };
@@ -151,9 +159,12 @@ export interface ToolContext {
 
 export class ToolError extends Error {}
 
+
 /** Runs the model's tool calls for one ticket and remembers the decision, if any. */
 export class TicketTools {
   decision: Decision | undefined;
+  /** Precedents seen in this ticket's searches, for the scores recorded with a citation. */
+  private readonly seen = new Map<string, PrecedentHit>();
 
   constructor(private readonly ctx: ToolContext) {}
 
@@ -165,8 +176,11 @@ export class TicketTools {
         return this.getOrder(String(input['order_id']));
       case 'get_customer_history':
         return this.getCustomerHistory(String(input['customer_id']));
-      case 'search_precedents':
-        return searchPrecedents(this.ctx.db, String(input['query'] ?? ''));
+      case 'search_precedents': {
+        const result = await searchPrecedents(this.ctx.db, String(input['query'] ?? ''));
+        for (const h of result.hits) this.seen.set(h.precedent_id, h);
+        return result;
+      }
       case 'propose_refund':
         return this.proposeRefund(input as unknown as ProposeInput);
       case 'decline_refund':
@@ -205,6 +219,11 @@ export class TicketTools {
     if (this.decision) throw new ToolError('a decision has already been recorded for this ticket');
     const { db, policy, trace, ticket } = this.ctx;
 
+    // A7: the precedent ceiling, from the ticket text rather than the model's query.
+    const { check, hits } = await precedentCheck(db, ticket);
+    const scores = new Map<string, PrecedentHit>([...hits.map((h) => [h.precedent_id, h] as const), ...this.seen]);
+    const cited = await this.citedPrecedents(input.evidence, scores);
+
     const proposal: IntentDoc = {
       _id: new ObjectId(),
       trace_id: trace.traceId,
@@ -219,12 +238,14 @@ export class TicketTools {
       policy_version: policy.version,
       idempotency_key: idempotencyKey(ticket._id, input.order_id),
       created_at: new Date(),
+      precedent_check: check,
+      ...(cited.length ? { precedents_cited: cited } : {}),
     };
 
     try {
       await db.collection<IntentDoc>(COLLECTIONS.intents).insertOne(proposal);
       this.decision = { status: 'proposed', collection: 'intents', amount_cents: proposal.amount_cents, proposal_id: proposal._id };
-      await trace.write('decision', { tool: 'propose_refund', output: this.decision });
+      await trace.write('decision', { tool: 'propose_refund', output: { ...this.decision, precedent_check: check, precedents_cited: cited } });
       return { outcome: 'approved_automatically', amount_cents: proposal.amount_cents, note: 'The refund will be paid out.' };
     } catch (err) {
       if (isCode(err, 11000)) return this.alreadyProposed(proposal.amount_cents);
@@ -232,13 +253,18 @@ export class TicketTools {
 
       // A2: the server refused it as an auto refund. Park the same proposal for humans.
       const serverError = err as MongoServerError;
-      const tier = tierFor(proposal.amount_cents, policy);
+      const deviation = precedentDeviation(proposal.amount_cents, check);
+      // Under the auto cap but off-precedent: a human (one approver) reviews it.
+      const capTier = tierFor(proposal.amount_cents, policy);
+      const tier = deviation && capTier === 'single_agent' ? 'peer_review' : capTier;
+      const hold_reasons = deviation ? [deviation] : [];
       const review: ReviewQueueDoc = {
         ...proposal,
         tier,
         required_approvals: tier === 'blocked' ? REQUIRED_APPROVALS.human_required : REQUIRED_APPROVALS[tier],
         status: 'pending',
         validator_error: { code: 121, errmsg: serverError.errmsg ?? serverError.message, errInfo: serverError.errInfo },
+        ...(hold_reasons.length ? { hold_reasons } : {}),
       };
       try {
         await db.collection<ReviewQueueDoc>(COLLECTIONS.review_queue).insertOne(review);
@@ -254,17 +280,43 @@ export class TicketTools {
         tier,
         required_approvals: review.required_approvals,
         rules: failedRules(serverError.errInfo),
-        violations: describeViolations(serverError.errInfo),
+        violations: [...describeViolations(serverError.errInfo).filter((v) => v !== '$expr'), ...hold_reasons],
+        hold_reasons,
       };
-      await trace.write('decision', { tool: 'propose_refund', output: { ...this.decision, validator_error: review.validator_error } });
+      await trace.write('decision', {
+        tool: 'propose_refund',
+        output: { ...this.decision, validator_error: review.validator_error, precedent_check: check, precedents_cited: cited },
+      });
       return {
         outcome: 'held_for_human_review',
         amount_cents: proposal.amount_cents,
         tier,
         required_approvals: review.required_approvals,
-        note: 'The database did not accept this as an automatic refund. It is queued for human approval; no money moves until then.',
+        ...(hold_reasons.length ? { hold_reasons } : {}),
+        note: deviation
+          ? `Held: ${deviation}. It is queued for human approval; no money moves until then.`
+          : 'The database did not accept this as an automatic refund. It is queued for human approval; no money moves until then.',
       };
     }
+  }
+
+  /** A7: the precedents cited as evidence (kind "precedent"), with similarity and amounts. */
+  private async citedPrecedents(evidence: Evidence[], scores: Map<string, PrecedentHit>): Promise<PrecedentRef[]> {
+    const ids = [...new Set((evidence ?? []).filter((e) => e?.kind === 'precedent' && typeof e.ref === 'string').map((e) => e.ref as string))];
+    if (!ids.length) return [];
+    const missing = ids.filter((id) => !scores.has(id));
+    const docs = missing.length
+      ? await this.ctx.db
+          .collection<PrecedentDoc>(COLLECTIONS.precedents)
+          .find({ _id: { $in: missing } }, { projection: { refund_cents: 1, outcome: 1 } })
+          .toArray()
+      : [];
+    return ids.map((id) => {
+      const hit = scores.get(id);
+      if (hit) return precedentRef(hit);
+      const doc = docs.find((d) => d._id === id);
+      return { precedent_id: id, score: null, refund_cents: doc?.refund_cents ?? null, outcome: doc?.outcome ?? null };
+    });
   }
 
   private async alreadyProposed(amount_cents: number) {
