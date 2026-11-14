@@ -27,6 +27,14 @@ export interface LedgerSummary {
   failure_reason?: string;
 }
 
+export interface BlockedWrite {
+  tool?: string;
+  collection?: string;
+  operation?: string;
+  code?: number;
+  codeName?: string;
+}
+
 export interface TicketCard {
   ticket_id: string;
   subject: string;
@@ -37,6 +45,8 @@ export interface TicketCard {
   amount_cents?: number;
   review?: ReviewCard;
   ledger?: LedgerSummary;
+  /** Writes the agent attempted in this run that MongoDB refused (compromised-agent demo), from `rejected_write` traces. */
+  blocked_writes?: BlockedWrite[];
   /** Why the agent declined, or what went wrong. */
   note?: string;
   updated_at?: string;

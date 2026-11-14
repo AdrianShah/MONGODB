@@ -3,9 +3,11 @@
  * Connects as the dashboard database user (DASHBOARD_DB_USER), read-only.
  * DASHBOARD_PORT (default 4100), APPROVAL_URL (default http://127.0.0.1:4000).
  * Viewing needs an approver sign-in unless DASHBOARD_PUBLIC=1.
+ * ELEVENLABS_API_KEY (+ ELEVENLABS_VOICE_ID) turns on ElevenLabs voice; the key stays in this process.
  */
 import { connectAs, loadConfigOrExit } from '@escrowops/shared';
 import { buildDashboardServer } from './server.js';
+import { voiceOptionsFromEnv } from './voice.js';
 
 const config = loadConfigOrExit();
 const port = Number(process.env['DASHBOARD_PORT'] ?? 4100);
@@ -14,7 +16,8 @@ const approvalUrl = process.env['APPROVAL_URL'] ?? `http://127.0.0.1:${process.e
 
 const client = await connectAs('dashboard', config);
 const requireLogin = !['1', 'true', 'yes'].includes((process.env['DASHBOARD_PUBLIC'] ?? '').toLowerCase());
-const app = await buildDashboardServer({ client, db: client.db(config.dbName), approvalUrl, requireLogin });
+const voice = voiceOptionsFromEnv(process.env);
+const app = await buildDashboardServer({ client, db: client.db(config.dbName), approvalUrl, requireLogin, voice });
 
 const shutdown = async (signal: string) => {
   console.log(`[dashboard] ${signal}, stopping`);
@@ -26,4 +29,4 @@ process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
 await app.listen({ port, host });
-console.log(`[dashboard] http://${host}:${port} (approval service ${approvalUrl}; ${requireLogin ? 'approver sign-in required' : 'public, DASHBOARD_PUBLIC set'})`);
+console.log(`[dashboard] http://${host}:${port} (approval service ${approvalUrl}; ${requireLogin ? 'approver sign-in required' : 'public, DASHBOARD_PUBLIC set'}; voice: ${voice.apiKey ? 'ElevenLabs' : 'browser speech'})`);

@@ -130,6 +130,12 @@ function describe(source: string, kind: string, r: Document, rules: string[]): s
       }
       if (kind === 'reasoning') return `Agent: ${String(r['text'] ?? '').slice(0, 200)}`;
       if (kind === 'error') return `Agent error: ${r['text']}`;
+      if (kind === 'rejected_write') {
+        const out = (r['output'] ?? {}) as Document;
+        const amount = typeof out['amount_cents'] === 'number' ? ` ${dollars(out['amount_cents'])}` : '';
+        const why = (out['violations'] as string[] | undefined)?.length ? `: ${(out['violations'] as string[]).join('; ')}` : '';
+        return `Agent tried ${r['tool']}${amount} (${out['operation']} on ${out['collection']}) → MongoDB rejected (code ${out['code']} ${out['codeName'] ?? ''})${why}`;
+      }
       return kind;
     case 'intents':
       return `Auto refund ${dollars(r['amount_cents'])} written to intents`;

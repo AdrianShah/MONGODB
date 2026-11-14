@@ -36,14 +36,17 @@
     "freeze": "tsx scripts/freeze.ts",
     "unfreeze": "tsx scripts/freeze.ts --unfreeze",
     "agent:freeze": "tsx scripts/freeze.ts",
-    "agent:unfreeze": "tsx scripts/freeze.ts --unfreeze"
+    "agent:unfreeze": "tsx scripts/freeze.ts --unfreeze",
+    "demo:jailbreak": "tsx scripts/jailbreak.ts",
+    "jailbreak": "tsx scripts/jailbreak.ts",
+    "demo:tunnel": "tsx scripts/tunnel.ts"
   },
   "dependencies": {
     "@escrowops/agent": "*",
     "@escrowops/api": "*",
     "@escrowops/executor": "*",
-    "@escrowops/web": "*",
     "@escrowops/shared": "*",
+    "@escrowops/web": "*",
     "dotenv": "^18.0.10",
     "mongodb": "^7.9.0"
   },

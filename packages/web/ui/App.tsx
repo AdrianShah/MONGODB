@@ -14,6 +14,7 @@ import {
 } from './api.js';
 import { FreezeBanner, FreezeControl } from './KillSwitch.js';
 import type { FreezeSummary } from '../src/types.js';
+import { ListenButton, NarrateButton } from './voice.js';
 
 const COLUMNS: Array<{ id: string; title: string; hint: string; stages: Stage[] }> = [
   { id: 'intake', title: 'Intake', hint: 'Waiting for or being worked by the agent', stages: ['open', 'working'] },
@@ -229,6 +230,11 @@ function Ticket({ ticket, me, onOpen }: { ticket: TicketCard; me: string | null;
           {STAGE_LABEL[ticket.stage]}
         </span>
       </div>
+      {ticket.blocked_writes?.length ? (
+        <p className="injection" data-testid="injection-blocked" title={ticket.blocked_writes.map((b) => `${b.tool}: code ${b.code}`).join('\n')}>
+          {`Injection attempt blocked · ${ticket.blocked_writes.length} write${ticket.blocked_writes.length === 1 ? '' : 's'} refused by MongoDB (code ${[...new Set(ticket.blocked_writes.map((b) => b.code))].join(', ')})`}
+        </p>
+      ) : null}
       <p className="subject">{ticket.subject}</p>
       <div className="meta">
         {ticket.amount_cents !== undefined && <span className="amount">{dollars(ticket.amount_cents)}</span>}
@@ -300,6 +306,7 @@ function Review({ review, me }: { review: ReviewCard; me: string | null }) {
           ))}
         </ul>
       )}
+      {me && <ListenButton reviewId={review.id} />}
       <div className="actions">
         <button className="approve" disabled={disabled} onClick={() => decide('approve')} data-testid="approve">
           Approve
@@ -342,6 +349,7 @@ function Timeline({ ticket, onClose }: { ticket: TicketCard; onClose: () => void
             <p className="small muted">
               One <code>$unionWith</code> aggregation over trace <code>{ticket.trace_id}</code>
             </p>
+            {ticket.trace_id && <NarrateButton traceId={ticket.trace_id} />}
           </div>
           <button className="ghost" onClick={onClose} aria-label="Close">
             ✕

@@ -79,7 +79,11 @@ test.describe('dual control on a $5,000 refund', () => {
       await expect(held.getByTestId('evidence')).toContainText('order_line');
       await expect(held.getByTestId('rule')).toContainText('maximum');
       await expect(held.getByTestId('progress')).toHaveText('0 of 2');
+      await expect(held.getByTestId('listen')).toBeVisible();
     }
+    // Voice is read-only: listening (browser speech here, no ElevenLabs key) approves nothing.
+    await card(a, 'held', 'T-1011').getByTestId('listen').click();
+    await expect(card(b, 'held', 'T-1011').getByTestId('progress')).toHaveText('0 of 2');
   });
 
   test('U3, U4: approver A approves; both browsers show 1 of 2 and A cannot approve again', async () => {
@@ -103,6 +107,7 @@ test.describe('dual control on a $5,000 refund', () => {
   test('U6: the audit timeline shows every stage in order, ending with the refund ID', async () => {
     await card(a, 'paid', 'T-1011').getByTestId('open-timeline').click();
     await expect(a.getByTestId('integrity')).toContainText('Hash chain verified');
+    await expect(a.getByTestId('timeline').getByTestId('narrate')).toBeVisible();
     const events = a.getByTestId('timeline').getByTestId('timeline-event');
     await expect(events.last()).toContainText('re_fake_');
     const kinds = await events.evaluateAll((els) => els.map((e) => `${e.getAttribute('data-source')}:${e.getAttribute('data-kind')}`));
