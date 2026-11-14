@@ -55,6 +55,39 @@ export function anthropicCreateMessage(client: Anthropic): CreateMessage {
   return (params) => client.beta.messages.create(params);
 }
 
+/** DeepSeek's Anthropic-compatible Messages API. The SDK appends `/v1/messages`. */
+export const DEEPSEEK_ANTHROPIC_BASE_URL = 'https://api.deepseek.com/anthropic';
+
+/**
+ * Same tool loop as Claude, sent to DeepSeek. Drops Claude-only request fields DeepSeek
+ * rejects: the refusal-fallback beta, prompt-cache markers, and strict tool mode.
+ * `thinking.adaptive` becomes `enabled`; DeepSeek ignores `budget_tokens`.
+ */
+export function deepseekCreateMessage(client: Anthropic): CreateMessage {
+  const send = anthropicCreateMessage(client);
+  return (params) => send(forDeepSeek(params));
+}
+
+function forDeepSeek(params: CreateParams): CreateParams {
+  const { betas: _betas, fallbacks: _fallbacks, ...rest } = params;
+  const thinking = rest.thinking?.type === 'adaptive' ? { type: 'enabled' as const, budget_tokens: 1024 } : rest.thinking;
+  const system = Array.isArray(rest.system)
+    ? rest.system.map((block) => {
+        if (typeof block !== 'string' && block.type === 'text') {
+          const { cache_control: _cache, ...kept } = block;
+          return kept;
+        }
+        return block;
+      })
+    : rest.system;
+  const tools = rest.tools?.map((tool) => {
+    if (!('name' in tool)) return tool;
+    const { strict: _strict, cache_control: _cache, ...kept } = tool;
+    return kept;
+  });
+  return { ...rest, ...(thinking ? { thinking } : {}), ...(system !== undefined ? { system } : {}), ...(tools ? { tools } : {}) };
+}
+
 /** The active policy document, or the default if none is seeded. */
 export async function loadActivePolicy(db: Db): Promise<Policy> {
   const doc = await db.collection<PolicyDoc>(COLLECTIONS.policies).findOne({ active: true }, { sort: { version: -1 } });

@@ -1,6 +1,8 @@
 export {
   resolveTicket,
   anthropicCreateMessage,
+  deepseekCreateMessage,
+  DEEPSEEK_ANTHROPIC_BASE_URL,
   loadActivePolicy,
   type AgentOptions,
   type CreateMessage,
