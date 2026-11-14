@@ -133,6 +133,10 @@ All four processes run in-process against the test database with `FakeProvider`.
 | I10 | Same ticket proposed twice | One intent, one payout |
 | I11 | Refund larger than the order's remaining refundable amount | Ledger entry `failed` with reason; no provider call (E5) |
 | I12 | Order belongs to a different customer | Ledger entry `failed`; no provider call (E5) |
+| I12a | Order has no `payment_id` | Ledger entry `failed`; no provider call (E5) |
+| I12b | Same ticket reaches the executor twice: a paid intent, then an `approved` document for the same `ticket_id` | Second ledger entry `failed`; one provider call in total (E5) |
+| I12c | Provider key | The key sent to the provider equals the ledger entry's `source_id`, on every attempt (E2) |
+| I12d | Three stale `pending` entries, the first of which throws an unexpected error on reconcile | The other two are still reconciled; the executor finishes starting (E3) |
 | I13 | Provider returns a transient error | Retried with the same key; one successful payout |
 | I14 | Provider returns a permanent error | Ledger entry `failed`; not retried; visible in the timeline |
 | I15 | Daily budget exhausted | Next auto refund is diverted to review (E6) |
@@ -178,6 +182,8 @@ One Stripe-backed variant of C3 runs manually before each rehearsal, checked aga
 |---|---|---|
 | O1 | `npm run setup` twice | Second run makes no changes and exits cleanly |
 | O2 | `npm run reset` then the full batch | Same outcome as a fresh database; under 10 s |
+| O2a | Pay a ticket, `npm run reset`, pay the same ticket again | The provider creates a second refund (a new key), not a replay of the first |
+| O2b | The executor's tests | Run on the shared harness against the real validators, indexes and `executor_role`; unit tests are part of root `npm test`, chaos tests are `npm run test:chaos` |
 | O3 | `apply-policy` raising the auto cap to $750 | $600 intent now accepted; old `policy_version` rejected |
 | O4 | Processes started in any order | System converges once all are up |
 | O5 | Missing or wrong environment variable | Process exits with a message naming the variable |
