@@ -1,0 +1,16 @@
+{
+  "name": "@escrowops/agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude resolves refund tickets by proposing refunds; MongoDB decides what may pay out.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "@escrowops/shared": "*",
+    "mongodb": "^7.9.0"
+  }
+}
