@@ -98,6 +98,17 @@ npm run redteam    # attack with the agent's credentials — all denied
 | `npm run reset` | Clear run data and re-seed; keep schema and roles |
 | `npm run test:chaos` | Kill the executor mid-payout; assert exactly one refund |
 
+## Voice for approvers (ElevenLabs)
+
+Held refunds have a **Listen** button: the dashboard reads the card aloud (amount, tier, the agent's reason and evidence, the validator rule it broke, and "1 of 2" progress). The audit timeline has **Narrate audit trail**: a short spoken reconstruction of the ticket, the agent's tool calls, the validator decision, the approvers and the payout ID.
+
+- Scripts are deterministic templates over data the dashboard already shows; no LLM.
+- Audio comes from ElevenLabs text-to-speech, called by the dashboard server with `ELEVENLABS_API_KEY` (and optional `ELEVENLABS_VOICE_ID`). The key never leaves the server; the dashboard's database access stays read-only.
+- Audio is cached per card version, so each version costs credits once.
+- Approvers only, even with `DASHBOARD_PUBLIC=1`.
+- No key, or ElevenLabs down: the same script is spoken by the browser's `speechSynthesis`, so the demo never breaks.
+- **Voice never approves.** Approving still takes the signed-in Approve click, which goes to the approval service and the `approved` validator.
+
 ## Demo
 
 Timed script, fallbacks, and likely judge Q&A: **[docs/DEMO.md](docs/DEMO.md)**

@@ -57,6 +57,10 @@ A card appears in the review queue on both devices.
 
 Click the card. Show the agent's reason, the evidence, and the rule it broke.
 
+Optional, if ElevenLabs is set up (skip in the 2-minute cut): click **Listen**. The card reads itself aloud, ending with "Listening approves nothing." Stop it after a sentence or two.
+
+> "Approvers can listen to a card hands-free. Voice reads; it can't approve. That still takes a signed-in click."
+
 Approver A clicks **Approve**. Card shows **1 of 2**.
 
 > "Over two thousand dollars needs two different people. I've approved. Watch what happens if I try again."
@@ -114,6 +118,8 @@ Click the $5,000 card, open the timeline.
 
 > "And every dollar is reconstructable: the ticket, each tool call the model made, the validator rejection, both approvers, the Stripe refund ID. One aggregation over one trace ID."
 
+Optional: click **Narrate audit trail** and let the first sentences play under the closing line. It is spoken from the same aggregation, by ElevenLabs.
+
 > "EscrowOps: the agent proposes, MongoDB decides."
 
 ## If something breaks
@@ -125,6 +131,7 @@ Click the $5,000 card, open the timeline.
 | Model call slow | Run `npm run batch -- --replay`, which replays recorded proposals from the last good run through the real database path. Say so. |
 | Dashboard not updating | Reload; state comes from the database. |
 | Phone approver not working | Use the second browser window logged in as Approver B. |
+| ElevenLabs slow, out of credits or no key | Nothing to do: the buttons fall back to the browser's voice. Or skip the voice beat. |
 | Everything is on fire | Play the backup recording and narrate over it. |
 
 Decide the fallback within five seconds and keep talking. Do not debug on stage.

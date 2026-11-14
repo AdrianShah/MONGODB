@@ -5,6 +5,7 @@
  *   GET  /api/pipeline              S6: one card per ticket
  *   GET  /api/timeline/:traceId     S7: the $unionWith audit timeline
  *   GET  /ws/pipeline               live: the full pipeline after every change
+ *   GET  /api/voice/...             listen / narrate (ElevenLabs, approvers only; see voice.ts)
  *   *    /api/login, /api/logout, /api/me, /api/reviews/...   forwarded to the approval service
  *   GET  /*                         the built React app (packages/web/dist)
  *
@@ -21,6 +22,7 @@ import { ReviewService } from '@escrowops/api';
 import { loadBudget, loadPipeline } from './pipeline.js';
 import { loadTimeline } from './timeline.js';
 import type { PipelineMessage } from './types.js';
+import { registerVoiceRoutes, type VoiceOptions } from './voice.js';
 
 export const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url));
 const WATCHED = ['agent_traces', 'intents', 'review_queue', 'approvals', 'approved', 'ledger', 'tickets', 'budgets'];
@@ -46,6 +48,8 @@ export interface DashboardOptions {
    * checked against the approval service. DASHBOARD_PUBLIC=1 turns this off.
    */
   requireLogin?: boolean;
+  /** ElevenLabs settings. Omitted or without a key: the UI uses the browser's speechSynthesis. */
+  voice?: VoiceOptions;
   log?: (line: string) => void;
 }
 
@@ -99,6 +103,8 @@ export async function buildDashboardServer(opts: DashboardOptions): Promise<Fast
     trace_id: req.params.traceId,
     ...(await loadTimeline(opts.db, req.params.traceId)),
   }));
+
+  registerVoiceRoutes(app, { db: opts.db, reviews, whoIs, log, ...(opts.voice ? { voice: opts.voice } : {}) });
 
   // Approval routes go to the approval service unchanged, cookies included.
   const forward = async (req: FastifyRequest, reply: FastifyReply) => {

@@ -1,0 +1,8 @@
+/* Voice buttons (voice.tsx). Kept apart from styles.css so other dashboard work does not conflict. */
+.voice { display: inline-flex; align-items: center; gap: 8px; }
+.voice-button { font-size: 0.8rem; padding: 3px 10px; border-color: var(--violet); color: var(--violet); background: transparent; }
+.voice-button[aria-pressed='true'] { background: rgba(180, 140, 255, 0.14); }
+.voice-via { font-size: 0.75rem; color: var(--muted); }
+.voice-via.error { color: var(--red); }
+.review .voice { margin-top: 8px; }
+.drawer header .voice { margin-top: 6px; }
