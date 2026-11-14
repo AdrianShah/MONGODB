@@ -20,30 +20,9 @@ export type ReviewDoc = ReviewQueueDoc & {
   promotion_error?: { code: number; errmsg?: string; errInfo?: unknown };
 };
 
-export type ReviewStatus = ReviewQueueDoc['status'];
+import type { ReviewCard, ReviewStatus } from './card.js';
 
-/** What a review card shows (S5) plus approval progress (S8). */
-export interface ReviewCard {
-  id: string;
-  trace_id: string;
-  ticket_id: string;
-  order_id: string;
-  customer_id: string;
-  amount_cents: number;
-  tier: ReviewQueueDoc['tier'];
-  status: ReviewStatus;
-  reason: string;
-  evidence: ReviewQueueDoc['evidence'];
-  /** Validator rules the agent's proposal broke, e.g. ["maximum"]. */
-  rules_broken: string[];
-  validator_message?: string;
-  required_approvals: number;
-  approvals: Array<{ approver_id: string; decision: ApprovalDoc['decision']; note?: string; at: string }>;
-  approved_count: number;
-  promotion_error?: string;
-  created_at: string;
-  updated_at?: string;
-}
+export type { ReviewCard, ReviewStatus };
 
 export type DecisionOutcome = 'recorded' | 'promoted' | 'rejected' | 'blocked';
 
