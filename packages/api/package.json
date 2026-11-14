@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Approval service: approver login, approve/reject, and promotion of fully approved refunds.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./card": "./src/card.ts"
   },
   "types": "./src/index.ts",
   "dependencies": {

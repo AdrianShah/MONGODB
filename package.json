@@ -12,8 +12,12 @@
   "scripts": {
     "test": "vitest run",
     "test:chaos": "vitest run --config vitest.chaos.config.ts",
-    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/web/tsconfig.json",
     "api": "tsx packages/api/src/main.ts",
+    "dashboard": "tsx packages/web/src/main.ts",
+    "web:build": "npm run build -w @escrowops/web",
+    "web:dev": "npm exec -w @escrowops/web -- vite",
     "batch": "tsx packages/agent/src/main.ts",
     "executor": "tsx packages/executor/src/main.ts",
     "fake-provider": "tsx packages/executor/src/providers/fake-http-server.ts",
@@ -28,11 +32,13 @@
     "@escrowops/agent": "*",
     "@escrowops/api": "*",
     "@escrowops/executor": "*",
+    "@escrowops/web": "*",
     "@escrowops/shared": "*",
     "dotenv": "^18.0.10",
     "mongodb": "^7.9.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.6",
     "mongodb-memory-server": "^11.3.0",
     "tsx": "^4.23.15",
