@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net';
 import type { Db } from 'mongodb';
 import { buildApiServer, DEFAULT_APPROVERS } from '@escrowops/api';
 import { Executor, FakeProvider } from '@escrowops/executor';
-import { buildDashboardServer } from '@escrowops/web';
+import { buildDashboardServer, type VoiceOptions } from '@escrowops/web';
 import { setUpAccess } from '../roles/role-helpers.js';
 import { seedDatabase } from '../../scripts/lib/seed-data.js';
 import { createTestDb, type TestDb } from './test-db.js';
@@ -27,7 +27,7 @@ export interface Stack {
 
 export async function startStack(
   uri: string,
-  opts: { prefix?: string; dashboardPort?: number; distDir?: string; requireLogin?: boolean; dailyBudgetCents?: number } = {},
+  opts: { prefix?: string; dashboardPort?: number; distDir?: string; requireLogin?: boolean; dailyBudgetCents?: number; voice?: VoiceOptions; redteam?: boolean } = {},
 ): Promise<Stack> {
   const t = await createTestDb(uri, opts.prefix ?? 'stack');
   await setUpAccess(t);
@@ -45,7 +45,29 @@ export async function startStack(
   await executor.start();
 
   const approverClient = await t.connectAsRole('approver');
-  const api = await buildApiServer({ client: approverClient, db: approverClient.db(t.dbName), approvers: DEFAULT_APPROVERS, log: quiet });
+  // The red-team panel's route: fresh agent and dashboard connections per run, no pauses or cooldown.
+  const redteam = opts.redteam
+    ? {
+        pauseMs: 0,
+        cooldownMs: 0,
+        connect: async () => {
+          const agent = await t.connectAsRole('agent');
+          const reader = await t.connectAsRole('dashboard');
+          return {
+            agentDb: agent.db(t.dbName),
+            readDb: reader.db(t.dbName),
+            close: async () => void (await Promise.all([agent.close(), reader.close()])),
+          };
+        },
+      }
+    : undefined;
+  const api = await buildApiServer({
+    client: approverClient,
+    db: approverClient.db(t.dbName),
+    approvers: DEFAULT_APPROVERS,
+    log: quiet,
+    ...(redteam ? { redteam } : {}),
+  });
   await api.app.listen({ port: 0, host: '127.0.0.1' });
   const approvalUrl = `http://127.0.0.1:${(api.app.server.address() as AddressInfo).port}`;
 
@@ -57,6 +79,7 @@ export async function startStack(
     log: quiet,
     requireLogin: opts.requireLogin ?? true,
     ...(opts.distDir ? { distDir: opts.distDir } : {}),
+    ...(opts.voice ? { voice: opts.voice } : {}),
   });
   await dashboard.listen({ port: opts.dashboardPort ?? 0, host: '127.0.0.1' });
   const dashboardUrl = `http://127.0.0.1:${(dashboard.server.address() as AddressInfo).port}`;

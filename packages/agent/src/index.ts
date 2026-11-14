@@ -21,3 +21,13 @@ export {
   ticketOf,
   type Recording,
 } from './replay.js';
+export {
+  COMPROMISED_SYSTEM_PROMPT,
+  COMPROMISED_TOOLS,
+  COMPROMISED_EXTRA_TOOLS,
+  CompromisedTicketTools,
+  compromisedModel,
+  describeRejection,
+  injectedAmountCents,
+  type RejectedWrite,
+} from './compromised.js';

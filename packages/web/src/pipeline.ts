@@ -14,7 +14,7 @@ import {
   type TicketDoc,
 } from '@escrowops/shared';
 import type { ReviewDoc, ReviewService } from '@escrowops/api';
-import type { BudgetSummary, LedgerSummary, Stage, TicketCard } from './types.js';
+import type { BlockedWrite, BudgetSummary, LedgerSummary, Stage, TicketCard } from './types.js';
 
 const byTrace = <T extends { trace_id: string }>(docs: T[]) => {
   const map = new Map<string, T[]>();
@@ -76,6 +76,14 @@ export async function loadPipeline(db: Db, reviews: ReviewService): Promise<Tick
     if (review) card.review = reviewCards.get(review._id.toHexString());
     if (paid) card.ledger = summary(paid);
 
+    const blocked = runTraces.filter((t) => t.kind === 'rejected_write');
+    if (blocked.length) {
+      card.blocked_writes = blocked.map((t) => {
+        const o = (t.output ?? {}) as BlockedWrite;
+        return { tool: t.tool, collection: o.collection, operation: o.operation, code: o.code, codeName: o.codeName };
+      });
+    }
+
     card.stage = stageOf({ runTraces, intent: !!intent, review, promoted: !!promoted, ledger: paid });
     if (card.stage === 'declined') {
       const decision = runTraces.find((t) => t.kind === 'decision' && t.tool === 'decline_refund');
@@ -110,6 +118,9 @@ function stageOf(run: {
   if (run.intent) return 'proposed';
   if (run.runTraces.some((t) => t.kind === 'decision' && t.tool === 'decline_refund')) return 'declined';
   if (run.runTraces.some((t) => t.kind === 'error')) return 'error';
+  // A compromised run whose every write was refused (e.g. its $50,000 proposal hit the 121 and the
+  // ticket already had a proposal) has nothing else to show: it was stopped by the database.
+  if (run.runTraces.some((t) => t.kind === 'rejected_write')) return 'blocked';
   return run.runTraces.length ? 'working' : 'open';
 }
 

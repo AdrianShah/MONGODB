@@ -8,6 +8,7 @@
  *   GET  /api/reviews/:id
  *   POST /api/reviews/:id/approve  { note? }
  *   POST /api/reviews/:id/reject   { note? }
+ *   POST /api/redteam/run        run the demo attacks as the agent, streamed as SSE (./redteam.ts)
  *   GET  /ws                     snapshot of pending reviews, then every review change
  *
  * Every route except login and health needs a session (cookie, or `Authorization: Bearer`).
@@ -19,6 +20,7 @@ import { ObjectId, type Db, type MongoClient } from 'mongodb';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { ApproverDirectory, SessionStore, type ApproverAccount } from './approvers.js';
 import { ReviewFeed } from './feed.js';
+import { registerRedTeam, type RedTeamOptions } from './redteam.js';
 import { ReviewError, ReviewService, type FaultHook, type ReviewStatus } from './reviews.js';
 
 export const SESSION_COOKIE = 'escrowops_session';
@@ -31,6 +33,8 @@ export interface ApiOptions {
   log?: (line: string) => void;
   /** Test hook (C10). */
   fault?: FaultHook;
+  /** Enables POST /api/redteam/run (agent credentials only). Omitted: the route answers 503. */
+  redteam?: RedTeamOptions;
 }
 
 export interface ApiServer {
@@ -140,6 +144,8 @@ export async function buildApiServer(opts: ApiOptions): Promise<ApiServer> {
       },
     );
   }
+
+  registerRedTeam(app, opts.redteam, { approverOf, requireApprover, log });
 
   // S2: WebSocket feed, authenticated with the same session.
   const wss = new WebSocketServer({ noServer: true });

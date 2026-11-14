@@ -5,13 +5,17 @@
  *   GET  /api/pipeline              S6: one card per ticket
  *   GET  /api/timeline/:traceId     S7: the $unionWith audit timeline
  *   GET  /ws/pipeline               live: the full pipeline after every change
- *   *    /api/login, /api/logout, /api/me, /api/reviews/...   forwarded to the approval service
+ *   GET  /api/voice/...             listen / narrate (ElevenLabs, approvers only; see voice.ts)
+ *   *    /api/login, /api/logout, /api/me, /api/reviews/..., /api/redteam/...
+ *                                   forwarded to the approval service (event streams are piped through)
  *   GET  /*                         the built React app (packages/web/dist)
  *
  * The dashboard never writes. Approving and rejecting go to the approval service, which
  * checks the session and runs as escrow_approver.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
+import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -21,6 +25,7 @@ import { ReviewService } from '@escrowops/api';
 import { loadBudget, loadPipeline } from './pipeline.js';
 import { loadTimeline } from './timeline.js';
 import type { PipelineMessage } from './types.js';
+import { registerVoiceRoutes, type VoiceOptions } from './voice.js';
 
 export const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url));
 const WATCHED = ['agent_traces', 'intents', 'review_queue', 'approvals', 'approved', 'ledger', 'tickets', 'budgets'];
@@ -46,6 +51,8 @@ export interface DashboardOptions {
    * checked against the approval service. DASHBOARD_PUBLIC=1 turns this off.
    */
   requireLogin?: boolean;
+  /** ElevenLabs settings. Omitted or without a key: the UI uses the browser's speechSynthesis. */
+  voice?: VoiceOptions;
   log?: (line: string) => void;
 }
 
@@ -100,6 +107,8 @@ export async function buildDashboardServer(opts: DashboardOptions): Promise<Fast
     ...(await loadTimeline(opts.db, req.params.traceId)),
   }));
 
+  registerVoiceRoutes(app, { db: opts.db, reviews, whoIs, log, ...(opts.voice ? { voice: opts.voice } : {}) });
+
   // Approval routes go to the approval service unchanged, cookies included.
   const forward = async (req: FastifyRequest, reply: FastifyReply) => {
     const headers: Record<string, string> = {};
@@ -119,10 +128,16 @@ export async function buildDashboardServer(opts: DashboardOptions): Promise<Fast
     }
     const cookie = res.headers.get('set-cookie');
     if (cookie) reply.header('set-cookie', cookie);
-    reply.code(res.status).header('content-type', res.headers.get('content-type') ?? 'application/json');
+    const type = res.headers.get('content-type') ?? 'application/json';
+    reply.code(res.status).header('content-type', type);
+    // The red-team run streams Server-Sent Events: pass them on as they arrive.
+    if (type.startsWith('text/event-stream') && res.body) {
+      reply.header('cache-control', 'no-cache, no-transform').header('x-accel-buffering', 'no');
+      return reply.send(Readable.fromWeb(res.body as WebReadableStream<Uint8Array>));
+    }
     return reply.send(await res.text());
   };
-  for (const url of ['/api/login', '/api/logout', '/api/me', '/api/reviews', '/api/reviews/*']) {
+  for (const url of ['/api/login', '/api/logout', '/api/me', '/api/reviews', '/api/reviews/*', '/api/redteam/*']) {
     app.route({ method: ['GET', 'POST'], url, handler: forward });
   }
 

@@ -19,7 +19,28 @@ const port = Number(process.env['API_PORT'] ?? 4000);
 const host = process.env['API_HOST'] ?? '127.0.0.1';
 
 const client = await connectAs('approver', config);
-const { app } = await buildApiServer({ client, db: client.db(config.dbName), approvers });
+// The dashboard's red-team panel: each run logs in fresh as the agent (attacks) and the
+// read-only dashboard user (verification); the approver connection is never used for it.
+// REDTEAM_PANEL=0 turns the route off.
+const redteam =
+  process.env['REDTEAM_PANEL'] === '0'
+    ? undefined
+    : {
+        connect: async () => {
+          const agent = await connectAs('agent', config, { serverSelectionTimeoutMS: 10_000 });
+          const reader = await connectAs('dashboard', config, { serverSelectionTimeoutMS: 10_000 }).catch(async (err: unknown) => {
+            await agent.close();
+            throw err;
+          });
+          return {
+            agentDb: agent.db(config.dbName),
+            readDb: reader.db(config.dbName),
+            agentUsername: config.users.agent.username,
+            close: async () => void (await Promise.all([agent.close(), reader.close()])),
+          };
+        },
+      };
+const { app } = await buildApiServer({ client, db: client.db(config.dbName), approvers, ...(redteam ? { redteam } : {}) });
 
 const shutdown = async (signal: string) => {
   console.log(`[api] ${signal}, stopping`);

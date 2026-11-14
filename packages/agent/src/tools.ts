@@ -166,7 +166,7 @@ export class TicketTools {
   /** Precedents seen in this ticket's searches, for the scores recorded with a citation. */
   private readonly seen = new Map<string, PrecedentHit>();
 
-  constructor(private readonly ctx: ToolContext) {}
+  constructor(protected readonly ctx: ToolContext) {}
 
   async run(name: string, input: Record<string, unknown>): Promise<unknown> {
     switch (name) {
@@ -253,6 +253,7 @@ export class TicketTools {
 
       // A2: the server refused it as an auto refund. Park the same proposal for humans.
       const serverError = err as MongoServerError;
+      await this.onServerRejection('propose_refund', COLLECTIONS.intents, 'insert', serverError, proposal.amount_cents);
       const deviation = precedentDeviation(proposal.amount_cents, check);
       // Under the auto cap but off-precedent: a human (one approver) reviews it.
       const capTier = tierFor(proposal.amount_cents, policy);
@@ -319,6 +320,18 @@ export class TicketTools {
     });
   }
 
+  /**
+   * Called when the server refuses one of this ticket's writes. The honest agent has nothing to add
+   * (the held proposal is already in the trace); the compromised harness records every refusal.
+   */
+  protected async onServerRejection(
+    _tool: string,
+    _collection: string,
+    _operation: string,
+    _err: MongoServerError,
+    _amount_cents?: number,
+  ): Promise<void> {}
+
   private async alreadyProposed(amount_cents: number) {
     this.decision = { status: 'already_proposed', amount_cents };
     await this.ctx.trace.write('decision', { tool: 'propose_refund', output: this.decision });
@@ -340,7 +353,7 @@ interface ProposeInput {
   evidence: Evidence[];
 }
 
-function isCode(err: unknown, code: number): boolean {
+export function isCode(err: unknown, code: number): boolean {
   return err instanceof MongoServerError && err.code === code;
 }
 
