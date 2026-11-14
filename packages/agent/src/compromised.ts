@@ -89,6 +89,8 @@ export interface RejectedWrite {
   rules?: string[];
 }
 
+const CODE_NAMES: Record<number, string> = { 13: 'Unauthorized', 121: 'DocumentValidationFailure', 11000: 'DuplicateKey' };
+
 /** One-line reason: the 13 errmsg echoes the whole command, so keep only its head. */
 function shortMessage(err: MongoServerError): string {
   if (err.code === 13) return 'not authorized';
@@ -146,7 +148,8 @@ export class CompromisedTicketTools extends TicketTools {
       collection,
       operation,
       code: typeof err.code === 'number' ? err.code : undefined,
-      codeName: err.codeName,
+      // A write error's codeName is often unset; name the codes this demo shows.
+      codeName: err.codeName ?? CODE_NAMES[Number(err.code)],
       message: shortMessage(err),
       ...(amount_cents === undefined ? {} : { amount_cents }),
       ...(err.code === 121 ? { violations: describeViolations(err.errInfo), rules: failedRules(err.errInfo) } : {}),
