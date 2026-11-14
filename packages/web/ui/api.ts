@@ -1,6 +1,6 @@
-import type { PipelineMessage, TicketCard, TimelineEvent } from '../src/types.js';
+import type { BudgetSummary, PipelineMessage, TicketCard, TimelineEvent } from '../src/types.js';
 
-export type { ReviewCard, Stage, TicketCard, TimelineEvent } from '../src/types.js';
+export type { BudgetSummary, PipelineMessage, ReviewCard, Stage, TicketCard, TimelineEvent } from '../src/types.js';
 
 export class ApiError extends Error {
   constructor(
@@ -25,19 +25,28 @@ async function call<T>(method: 'GET' | 'POST', url: string, body?: unknown): Pro
 }
 
 export const api = {
+  config: () => call<{ requireLogin: boolean }>('GET', '/api/config'),
   me: () => call<{ approver_id: string }>('GET', '/api/me'),
   login: (approver_id: string, password: string) => call<{ approver_id: string }>('POST', '/api/login', { approver_id, password }),
   logout: () => call<{ ok: true }>('POST', '/api/logout', {}),
   decide: (reviewId: string, action: 'approve' | 'reject') =>
     call<{ outcome: string }>('POST', `/api/reviews/${reviewId}/${action}`, {}),
-  pipeline: () => call<{ tickets: TicketCard[] }>('GET', '/api/pipeline'),
-  timeline: (traceId: string) => call<{ events: TimelineEvent[] }>('GET', `/api/timeline/${encodeURIComponent(traceId)}`),
+  pipeline: () => call<{ tickets: TicketCard[]; budget: BudgetSummary | null }>('GET', '/api/pipeline'),
+  timeline: (traceId: string) =>
+    call<{ events: TimelineEvent[]; integrity?: TimelineIntegrity }>('GET', `/api/timeline/${encodeURIComponent(traceId)}`),
 };
+
+/** S9: whether the hash chains behind a timeline still verify. */
+export interface TimelineIntegrity {
+  ok: boolean;
+  checked: number;
+  problems: string[];
+}
 
 export type FeedStatus = 'connecting' | 'live' | 'reconnecting';
 
 /** The live pipeline over WebSocket. Reconnects forever; each (re)connect starts with the full pipeline (U9). */
-export function subscribePipeline(onTickets: (t: TicketCard[]) => void, onStatus: (s: FeedStatus) => void): () => void {
+export function subscribePipeline(onPipeline: (m: PipelineMessage) => void, onStatus: (s: FeedStatus) => void): () => void {
   let ws: WebSocket | undefined;
   let closed = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
@@ -47,7 +56,7 @@ export function subscribePipeline(onTickets: (t: TicketCard[]) => void, onStatus
     ws.onopen = () => onStatus('live');
     ws.onmessage = (e) => {
       const msg = JSON.parse(String(e.data)) as PipelineMessage;
-      if (msg.type === 'pipeline') onTickets(msg.tickets);
+      if (msg.type === 'pipeline') onPipeline(msg);
     };
     ws.onclose = () => {
       if (closed) return;

@@ -237,3 +237,17 @@ describe('approval to payout (I6)', () => {
     }
   });
 });
+
+describe('approver passwords', () => {
+  it('refuses the dev passwords on a database that is not local, unless allowed', async () => {
+    const { checkApproverSafety, isLocalDatabase } = await import('@escrowops/api');
+    expect(isLocalDatabase('mongodb://admin:pw@127.0.0.1:27017/?directConnection=true')).toBe(true);
+    expect(isLocalDatabase('mongodb+srv://u:p@cluster0.abc.mongodb.net/?retryWrites=true')).toBe(false);
+    const atlas = 'mongodb+srv://u:p@cluster0.abc.mongodb.net/';
+    expect(() => checkApproverSafety({}, atlas)).toThrow(/APPROVERS is not set/);
+    expect(checkApproverSafety({ ALLOW_DEV_APPROVERS: '1' }, atlas)).toEqual([expect.stringMatching(/dev approver passwords/)]);
+    expect(checkApproverSafety({ APPROVERS: 'approver-a:short,approver-b:a-long-enough-password' }, atlas)).toEqual([
+      'approver approver-a has a password shorter than 12 characters',
+    ]);
+  });
+});

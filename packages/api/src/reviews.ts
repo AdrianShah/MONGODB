@@ -11,7 +11,7 @@
  * review is marked `blocked` and nothing can pay (I9).
  */
 import { MongoServerError, ObjectId, type ClientSession, type Collection, type Db, type MongoClient } from 'mongodb';
-import { COLLECTIONS, type ApprovalDoc, type ApprovedDoc, type ReviewQueueDoc } from '@escrowops/shared';
+import { COLLECTIONS, GENESIS, sealRecord, type ApprovalDoc, type ApprovedDoc, type ReviewQueueDoc } from '@escrowops/shared';
 
 /** A review as the approval service stores it: the agent's document plus decision bookkeeping. */
 export type ReviewDoc = ReviewQueueDoc & {
@@ -195,9 +195,21 @@ export class ReviewService {
     note: string | undefined,
     session: ClientSession,
   ) {
+    // S9: chain this decision to the review's previous one. Read inside the transaction, so a
+    // concurrent decision that wins makes this one retry and re-read the head.
+    const earlier = await this.approvals.find({ review_id: review._id }, { session, projection: { hash: 1, prev_hash: 1 } }).toArray();
+    const referenced = new Set(earlier.map((a) => a.prev_hash));
+    const head = earlier.find((a) => a.hash && !referenced.has(a.hash))?.hash ?? GENESIS;
     try {
       await this.approvals.insertOne(
-        { _id: new ObjectId(), review_id: review._id, approver_id: approverId, decision, ...(note ? { note } : {}), created_at: new Date() },
+        sealRecord(head, {
+          _id: new ObjectId(),
+          review_id: review._id,
+          approver_id: approverId,
+          decision,
+          ...(note ? { note } : {}),
+          created_at: new Date(),
+        }),
         { session },
       );
     } catch (err) {

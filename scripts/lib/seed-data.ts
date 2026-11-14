@@ -26,8 +26,12 @@ import {
   ALL_COLLECTIONS,
   DEFAULT_POLICY,
   applySchema,
+  embed,
+  ensureVectorIndex,
+  precedentText,
   tierFor,
   type ChangeSummary,
+  type PrecedentDoc,
   type CollectionName,
   type CustomerDoc,
   type OrderDoc,
@@ -48,7 +52,14 @@ export const SEED_COLLECTIONS = [
   COLLECTIONS.orders,
   COLLECTIONS.tickets,
   COLLECTIONS.policies,
+  COLLECTIONS.precedents,
 ] as const satisfies readonly CollectionName[];
+
+/** A7: past resolved disputes from data/seed/precedents.json, with their embeddings. */
+export function loadPrecedents(dir: string = SEED_DIR): PrecedentDoc[] {
+  const raw = JSON.parse(readFileSync(join(dir, 'precedents.json'), 'utf8')) as Array<Omit<PrecedentDoc, 'embedding' | 'decided_at'> & { decided_at: string }>;
+  return raw.map((p) => ({ ...p, decided_at: new Date(p.decided_at), embedding: embed(precedentText(p)) }));
+}
 
 /** Everything the pipeline writes during a run. Reset empties these. */
 export const RUN_COLLECTIONS: readonly CollectionName[] = ALL_COLLECTIONS.filter(
@@ -324,6 +335,8 @@ export interface SeedSummary {
   orders: CollectionSeedResult;
   tickets: CollectionSeedResult;
   policy: { version: number; created: boolean; updated: boolean; deactivated: number };
+  /** A7: precedents and whether the Atlas Vector Search index is available on this server. */
+  precedents: CollectionSeedResult & { vectorIndex: 'created' | 'exists' | 'unavailable' };
 }
 
 export interface SeedOptions {
@@ -377,11 +390,13 @@ export async function seedDatabase(db: Db, options: SeedOptions = {}): Promise<S
     }
   }
 
-  const [customers, orders, tickets] = await Promise.all([
+  const [customers, orders, tickets, precedentDocs] = await Promise.all([
     upsertExact(db, COLLECTIONS.customers, data.customers),
     upsertExact(db, COLLECTIONS.orders, orderDocs),
     upsertExact(db, COLLECTIONS.tickets, data.tickets),
+    upsertExact(db, COLLECTIONS.precedents, loadPrecedents()),
   ]);
+  const vectorIndex = await ensureVectorIndex(db);
 
   // Policy `_id` is an ObjectId, so match on version and keep the first
   // created_at; a second run leaves the document byte-for-byte unchanged.
@@ -409,6 +424,7 @@ export async function seedDatabase(db: Db, options: SeedOptions = {}): Promise<S
     customers,
     orders,
     tickets,
+    precedents: { ...precedentDocs, vectorIndex },
     policy: {
       version: policy.version,
       created: upsert.upsertedCount > 0,
@@ -431,6 +447,7 @@ export function formatSeedSummary(summary: SeedSummary): string {
     formatCollection('customers', summary.customers),
     formatCollection('orders', summary.orders),
     formatCollection('tickets', summary.tickets),
+    `${formatCollection('precedents', summary.precedents)}; vector index ${summary.precedents.vectorIndex}`,
     `  policy     v${p.version} active (${p.created ? 'created' : p.updated ? 'updated' : 'unchanged'}${p.deactivated ? `, ${p.deactivated} other version(s) deactivated` : ''})`,
   ].join('\n');
 }

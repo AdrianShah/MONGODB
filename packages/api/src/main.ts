@@ -3,13 +3,14 @@
  * (APPROVER_DB_USER) and nothing else. Listens on API_HOST:API_PORT (default 127.0.0.1:4000).
  */
 import { connectAs, loadConfigOrExit } from '@escrowops/shared';
-import { loadApprovers } from './approvers.js';
+import { checkApproverSafety, loadApprovers } from './approvers.js';
 import { buildApiServer } from './server.js';
 
 const config = loadConfigOrExit(); // Loads .env; exits naming any missing variable.
 let approvers;
 try {
   approvers = loadApprovers();
+  for (const w of checkApproverSafety(process.env, config.mongodbUri)) console.warn(`[api] warning: ${w}`);
 } catch (err) {
   console.error((err as Error).message);
   process.exit(1);

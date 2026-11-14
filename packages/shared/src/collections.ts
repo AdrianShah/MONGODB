@@ -18,6 +18,8 @@ export const COLLECTIONS = {
   ledger: 'ledger',
   budgets: 'budgets',
   executor_state: 'executor_state',
+  /** A7: past resolved disputes the agent can search (seed data, with embeddings). */
+  precedents: 'precedents',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

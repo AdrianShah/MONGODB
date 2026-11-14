@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { ApiError, api, dollars, subscribePipeline, type FeedStatus, type ReviewCard, type Stage, type TicketCard, type TimelineEvent } from './api.js';
+import {
+  ApiError,
+  api,
+  dollars,
+  subscribePipeline,
+  type BudgetSummary,
+  type FeedStatus,
+  type ReviewCard,
+  type Stage,
+  type TicketCard,
+  type TimelineEvent,
+  type TimelineIntegrity,
+} from './api.js';
 
 const COLUMNS: Array<{ id: string; title: string; hint: string; stages: Stage[] }> = [
   { id: 'intake', title: 'Intake', hint: 'Waiting for or being worked by the agent', stages: ['open', 'working'] },
@@ -34,14 +46,32 @@ const TIER_LABEL: Record<string, string> = {
 
 export function App() {
   const [tickets, setTickets] = useState<TicketCard[]>([]);
+  const [budget, setBudget] = useState<BudgetSummary | null>(null);
   const [feed, setFeed] = useState<FeedStatus>('connecting');
   const [me, setMe] = useState<string | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [requireLogin, setRequireLogin] = useState(true);
   const [traceOpen, setTraceOpen] = useState<TicketCard | null>(null);
 
-  useEffect(() => subscribePipeline(setTickets, setFeed), []);
   useEffect(() => {
-    api.me().then((r) => setMe(r.approver_id), () => setMe(null));
+    Promise.all([
+      api.config().then((c) => setRequireLogin(c.requireLogin), () => setRequireLogin(true)),
+      api.me().then((r) => setMe(r.approver_id), () => setMe(null)),
+    ]).finally(() => setChecked(true));
   }, []);
+
+  const locked = requireLogin && !me;
+  useEffect(() => {
+    if (!checked || locked) {
+      setTickets([]);
+      setBudget(null);
+      return;
+    }
+    return subscribePipeline((m) => {
+      setTickets(m.tickets);
+      setBudget(m.budget);
+    }, setFeed);
+  }, [checked, locked]);
 
   const totals = useMemo(() => {
     const paid = tickets.filter((t) => t.stage === 'paid');
@@ -67,19 +97,33 @@ export function App() {
           </div>
         </div>
         <div className="topbar-right">
-          <span className={`feed feed-${feed}`} data-testid="feed-status">
-            <span className="dot" />
-            {feed === 'live' ? 'Live' : feed === 'connecting' ? 'Connecting' : 'Reconnecting'}
-          </span>
+          {!locked && (
+            <span className={`feed feed-${feed}`} data-testid="feed-status">
+              <span className="dot" />
+              {feed === 'live' ? 'Live' : feed === 'connecting' ? 'Connecting' : 'Reconnecting'}
+            </span>
+          )}
           <SignIn me={me} onChange={setMe} />
         </div>
       </header>
 
+      {locked ? (
+        <main className="locked" data-testid="locked">
+          <h2>Sign in to view the pipeline</h2>
+          <p className="muted">The dashboard shows refund decisions and customer data, so it is for approvers only. Use the form above.</p>
+        </main>
+      ) : (
+        <>
       <section className="stats" aria-label="Summary">
         <Stat label="Tickets" value={String(tickets.length)} />
         <Stat label="Paid out" value={dollars(totals.paidCents)} sub={`${totals.paid} refunds`} />
         <Stat label="Awaiting approval" value={String(totals.held)} />
-        <Stat label="Stopped" value={String(totals.stopped)} />
+        <Stat
+          label="Auto budget today"
+          value={budget ? `${dollars(budget.spent_cents)}` : '—'}
+          sub={budget ? `of ${dollars(budget.cap_cents)}; then refunds go to review` : 'not started today'}
+          testId="budget"
+        />
       </section>
 
       <main className="board">
@@ -101,15 +145,17 @@ export function App() {
           );
         })}
       </main>
+        </>
+      )}
 
-      {openTicket && <Timeline ticket={openTicket} onClose={() => setTraceOpen(null)} />}
+      {openTicket && !locked && <Timeline ticket={openTicket} onClose={() => setTraceOpen(null)} />}
     </div>
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Stat({ label, value, sub, testId }: { label: string; value: string; sub?: string; testId?: string }) {
   return (
-    <div className="stat">
+    <div className="stat" data-testid={testId}>
       <span className="stat-label">{label}</span>
       <span className="stat-value">{value}</span>
       {sub && <span className="stat-sub">{sub}</span>}
@@ -265,12 +311,19 @@ function Review({ review, me }: { review: ReviewCard; me: string | null }) {
 
 function Timeline({ ticket, onClose }: { ticket: TicketCard; onClose: () => void }) {
   const [events, setEvents] = useState<TimelineEvent[] | null>(null);
+  const [integrity, setIntegrity] = useState<TimelineIntegrity | undefined>();
   const [error, setError] = useState('');
   // Reload whenever the ticket moves, so the timeline stays live while open.
   const version = `${ticket.trace_id}|${ticket.stage}|${ticket.review?.approved_count ?? 0}|${ticket.ledger?.status ?? ''}`;
   useEffect(() => {
     if (!ticket.trace_id) return;
-    api.timeline(ticket.trace_id).then((r) => setEvents(r.events), (e) => setError(String(e)));
+    api.timeline(ticket.trace_id).then(
+      (r) => {
+        setEvents(r.events);
+        setIntegrity(r.integrity);
+      },
+      (e) => setError(String(e)),
+    );
   }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -287,6 +340,13 @@ function Timeline({ ticket, onClose }: { ticket: TicketCard; onClose: () => void
             ✕
           </button>
         </header>
+        {integrity && (
+          <p className={`integrity ${integrity.ok ? 'ok' : 'broken'}`} data-testid="integrity">
+            {integrity.ok
+              ? `✓ Hash chain verified: ${integrity.checked} records unchanged since they were written`
+              : `✗ Tampering detected: ${integrity.problems.join('; ')}`}
+          </p>
+        )}
         {error && <p className="error">{error}</p>}
         {!events && !error && <p className="muted">Loading…</p>}
         <ol className="events">

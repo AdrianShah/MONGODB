@@ -4,7 +4,7 @@
  */
 import { hostname } from 'node:os';
 import { MissingEnvError, connectAs, loadConfigOrExit } from '@escrowops/shared';
-import { InvalidEnvError, loadPaymentsConfig, type PaymentsConfig } from './config.js';
+import { InvalidEnvError, loadDailyBudgetCents, loadPaymentsConfig, type PaymentsConfig } from './config.js';
 import { Crasher } from './crash.js';
 import { Executor } from './executor.js';
 import { FakeProvider } from './providers/fake.js';
@@ -27,9 +27,11 @@ function makeProvider(payments: PaymentsConfig): PaymentProvider {
 const config = loadConfigOrExit(); // Loads .env; exits naming any missing variable.
 let payments: PaymentsConfig;
 let crasher: Crasher;
+let dailyBudgetCents: number;
 try {
   payments = loadPaymentsConfig();
   crasher = Crasher.fromEnv();
+  dailyBudgetCents = loadDailyBudgetCents();
 } catch (err) {
   if (err instanceof MissingEnvError || err instanceof InvalidEnvError || err instanceof Error) {
     console.error(err.message);
@@ -39,7 +41,8 @@ try {
 }
 
 const client = await connectAs('executor', config);
-const executor = new Executor({ db: client.db(config.dbName), provider: makeProvider(payments), crasher });
+const executor = new Executor({ db: client.db(config.dbName), provider: makeProvider(payments), crasher, dailyBudgetCents });
+if (dailyBudgetCents > 0) console.log(`[executor] daily auto-refund budget: $${(dailyBudgetCents / 100).toFixed(2)}`);
 
 let stopping = false;
 const shutdown = async (signal: string) => {

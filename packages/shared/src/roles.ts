@@ -103,6 +103,7 @@ export const ROLE_DEFINITIONS: readonly RoleDefinition[] = Object.freeze([
       { collection: C.orders, actions: ['find'] },
       { collection: C.customers, actions: ['find'] },
       { collection: C.policies, actions: ['find'] },
+      { collection: C.precedents, actions: ['find'] },
       { collection: C.agent_traces, actions: ['insert'] },
       { collection: C.intents, actions: ['insert'] },
       { collection: C.review_queue, actions: ['insert'] },
@@ -120,11 +121,13 @@ export const ROLE_DEFINITIONS: readonly RoleDefinition[] = Object.freeze([
     ],
   },
   {
-    // Executor: watches the two trusted collections, owns its own state.
+    // Executor: watches the two trusted collections, owns its own state. Insert on
+    // review_queue diverts auto refunds to humans once the daily budget is spent (E6).
     role: ROLE_NAMES.executor,
     privileges: [
       { collection: C.intents, actions: [...WATCH] },
       { collection: C.approved, actions: [...WATCH] },
+      { collection: C.review_queue, actions: ['insert'] },
       { collection: C.ledger, actions: ['find', 'insert', 'update'] },
       { collection: C.budgets, actions: ['find', 'insert', 'update'] },
       { collection: C.executor_state, actions: ['find', 'insert', 'update'] },

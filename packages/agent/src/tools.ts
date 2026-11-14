@@ -12,6 +12,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import {
   COLLECTIONS,
   REQUIRED_APPROVALS,
+  searchPrecedents,
   tierFor,
   type CustomerDoc,
   type Evidence,
@@ -60,6 +61,20 @@ export const TOOLS: Anthropic.Beta.Messages.BetaTool[] = [
       type: 'object',
       properties: { customer_id: { type: 'string', description: 'Customer ID, e.g. "C-1001".' } },
       required: ['customer_id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'search_precedents',
+    description:
+      'Search past resolved disputes for ones like this ticket (Atlas Vector Search). Returns the closest precedents with their ' +
+      'outcome, refund and rationale. Useful when the right amount or outcome is unclear. Cite a precedent you rely on as ' +
+      'evidence with kind "precedent" and ref set to its precedent_id.',
+    strict: true,
+    input_schema: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'A short description of the dispute, e.g. "two of six glasses broken, kept the rest".' } },
+      required: ['query'],
       additionalProperties: false,
     },
   },
@@ -150,6 +165,8 @@ export class TicketTools {
         return this.getOrder(String(input['order_id']));
       case 'get_customer_history':
         return this.getCustomerHistory(String(input['customer_id']));
+      case 'search_precedents':
+        return searchPrecedents(this.ctx.db, String(input['query'] ?? ''));
       case 'propose_refund':
         return this.proposeRefund(input as unknown as ProposeInput);
       case 'decline_refund':

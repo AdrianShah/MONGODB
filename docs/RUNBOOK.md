@@ -21,7 +21,7 @@ For the live agent, set `ANTHROPIC_API_KEY`. For real Stripe refunds, set `PAYME
 | 2 (right bottom) | `npm run executor` | Executor logs; killed and restarted on stage |
 | 3 (right top, large font) | `npm run reset`, then the commands below | Batch, red team, demo:kill |
 
-Open http://127.0.0.1:4100 twice: as `approver-a` on the laptop and `approver-b` on the second device (same network: set `DASHBOARD_HOST=0.0.0.0`). Default passwords: `approver-a-dev-password`, `approver-b-dev-password`.
+Open http://127.0.0.1:4100 twice and sign in: as `approver-a` on the laptop and `approver-b` on the second device (same network: set `DASHBOARD_HOST=0.0.0.0`). The board stays hidden until an approver signs in. On Atlas, set `APPROVERS` in `.env`; the approval service refuses the dev passwords on a non-local database.
 
 Pre-type in terminal 3's history: `npm run batch`, `npm run redteam`, `npm run demo:kill`.
 
@@ -48,6 +48,15 @@ Pre-type in terminal 3's history: `npm run batch`, `npm run redteam`, `npm run d
 | Dashboard stale | Reload; state comes from the database |
 | Second device fails | Second browser window as approver-b |
 
+## Answers that have a command behind them
+
+| Judge asks | Show |
+|---|---|
+| "How do you change the policy?" | `npm run apply-policy -- --auto-cap 750`. Regenerates the validators and bumps the policy version; a proposal built against the old version is now rejected. `npm run reset` restores the seed policy. |
+| "Could it split a big refund into many small ones?" | Same ticket and order: unique idempotency key. Across tickets: the daily auto-refund budget (`DAILY_AUTO_BUDGET_CENTS`, shown on the dashboard). The `budgets` validator refuses the reservation and the refund goes to review. |
+| "What if an admin edits the history?" | Open any audit timeline: "Hash chain verified". `npm run audit:verify` checks every agent trace and approval chain and names the record if anything was changed, inserted or deleted. |
+| "How does the agent decide partial amounts?" | It can search past resolved disputes (`search_precedents`, Atlas Vector Search on `precedents`) and cites the one it follows as evidence. |
+
 ## Rehearse
 
 ```sh
@@ -56,4 +65,6 @@ MONGODB_DB=escrowops_rehearsal npm run demo:rehearse          # 3 runs
 
 This runs the whole script with real processes (its own fake provider, approval service, dashboard and executor) and checks the invariants after each run: 9 auto refunds and the $5,000 paid, the same approver refused twice, all red-team attacks denied, the executor SIGKILLed mid-payout and reconciled, and every refund paid exactly once at the provider and in the ledger. It **resets** the database it points at, so use a separate one. About 3 seconds per run.
 
-Also before each rehearsal (TEST_PLAN section 8): `npm run test:chaos` and `npm run test:e2e`.
+Each run also checks the daily budget (it shows exactly the 9 auto refunds) and runs `npm run audit:verify`.
+
+Also before each rehearsal (TEST_PLAN section 8): `npm run test:chaos` and `npm run test:e2e`. After any prompt or tool change: `npm run test:evals` (needs `ANTHROPIC_API_KEY`, costs tokens: 20 tickets x 3 runs; without a key it dry-runs the labels to check the harness).

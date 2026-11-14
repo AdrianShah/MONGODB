@@ -14,6 +14,8 @@ export {
   ApproverDirectory,
   SessionStore,
   loadApprovers,
+  checkApproverSafety,
+  isLocalDatabase,
   DEFAULT_APPROVERS,
   InvalidApproversError,
   type ApproverAccount,

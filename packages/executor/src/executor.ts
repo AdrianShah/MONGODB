@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   MongoServerError,
+  ObjectId,
   type ChangeStream,
   type ChangeStreamInsertDocument,
   type Collection,
@@ -8,7 +9,16 @@ import {
   type ResumeToken,
   type Timestamp,
 } from 'mongodb';
-import { COLLECTIONS, ledgerSourceId, type ExecutorStateDoc, type OrderDoc } from '@escrowops/shared';
+import {
+  COLLECTIONS,
+  ledgerSourceId,
+  tierFor,
+  type BudgetDoc,
+  type ExecutorStateDoc,
+  type IntentDoc,
+  type OrderDoc,
+  type ReviewQueueDoc,
+} from '@escrowops/shared';
 import { Crasher } from './crash.js';
 import { PermanentProviderError, TransientProviderError, type PaymentProvider } from './providers/types.js';
 import type { ExecutorLedgerDoc, RefundSourceDoc, SourceCollection } from './types.js';
@@ -27,6 +37,12 @@ export interface ExecutorOptions {
   staleReconcileEveryMs?: number;
   /** A pending entry untouched for this long is considered abandoned. */
   staleAfterMs?: number;
+  /**
+   * E6: daily cap on auto refunds (intents), in cents. Once a refund would take the day's spend
+   * over it, the `budgets` validator refuses the reservation and the refund is diverted to
+   * review_queue for one approver. Undefined or 0 disables the budget.
+   */
+  dailyBudgetCents?: number;
 }
 
 const SOURCES: SourceCollection[] = [COLLECTIONS.intents, COLLECTIONS.approved];
@@ -64,6 +80,8 @@ export class Executor {
   private readonly ledger: Collection<ExecutorLedgerDoc>;
   private readonly orders: Collection<OrderDoc>;
   private readonly state: Collection<ExecutorStateDoc>;
+  private readonly budgets: Collection<BudgetDoc & { reservations?: string[] }>;
+  private readonly dailyBudgetCents: number;
 
   private stopped = false;
   private tail: Promise<void> = Promise.resolve();
@@ -85,6 +103,8 @@ export class Executor {
     this.ledger = this.db.collection<ExecutorLedgerDoc>(COLLECTIONS.ledger);
     this.orders = this.db.collection<OrderDoc>(COLLECTIONS.orders);
     this.state = this.db.collection<ExecutorStateDoc>(COLLECTIONS.executor_state);
+    this.budgets = this.db.collection<BudgetDoc & { reservations?: string[] }>(COLLECTIONS.budgets);
+    this.dailyBudgetCents = opts.dailyBudgetCents ?? 0;
   }
 
   /**
@@ -286,6 +306,9 @@ export class Executor {
         this.log(`[executor] refused ${label(entry)} ${dollars(entry.amount_cents)}: ${failure}`);
         return;
       }
+      if (entry.source_collection === 'intents' && this.dailyBudgetCents > 0 && !(await this.reserveBudget(entry))) {
+        return; // Diverted to review_queue.
+      }
       // Recorded before the provider call: from here on, recovery must retry, never re-check.
       await this.ledger.updateOne(
         { _id: entry._id, status: 'pending' },
@@ -295,6 +318,54 @@ export class Executor {
     }
     this.crash.at(2);
     await this.pay(entry, reconciling);
+  }
+
+  /**
+   * E6: reserve this auto refund against today's budget. The `budgets` validator
+   * (spent_cents <= cap_cents) decides; an over-budget reservation is refused with 121 and the
+   * refund is diverted to review_queue. Idempotent per source: a retried reservation for the
+   * same source_id matches nothing, the upsert collides on `_id`, and it counts as done.
+   */
+  private async reserveBudget(entry: ExecutorLedgerDoc): Promise<boolean> {
+    const day = new Date().toISOString().slice(0, 10);
+    try {
+      await this.budgets.updateOne(
+        { _id: day, reservations: { $ne: entry.source_id } },
+        {
+          $setOnInsert: { cap_cents: this.dailyBudgetCents },
+          $inc: { spent_cents: entry.amount_cents },
+          $push: { reservations: entry.source_id },
+          $set: { updated_at: new Date() },
+        },
+        { upsert: true },
+      );
+      return true;
+    } catch (err) {
+      if (isDuplicateKey(err)) return true; // Already reserved by an earlier attempt.
+      if (!(err instanceof MongoServerError) || err.code !== 121) throw err;
+      await this.divertToReview(entry, err, day);
+      return false;
+    }
+  }
+
+  private async divertToReview(entry: ExecutorLedgerDoc, err: MongoServerError, day: string) {
+    const intent = await this.db.collection<IntentDoc>(COLLECTIONS.intents).findOne({ _id: entry.source_doc_id });
+    if (!intent) throw new Error(`intent ${entry.source_id} not found to divert`);
+    const review: ReviewQueueDoc = {
+      ...intent,
+      _id: new ObjectId(),
+      tier: tierFor(intent.amount_cents),
+      required_approvals: 1,
+      status: 'pending',
+      validator_error: { code: 121, errmsg: `daily auto-refund budget for ${day} exhausted: ${err.errmsg ?? err.message}`, errInfo: err.errInfo },
+    };
+    try {
+      await this.db.collection<ReviewQueueDoc>(COLLECTIONS.review_queue).insertOne(review);
+    } catch (insertErr) {
+      if (!isDuplicateKey(insertErr)) throw insertErr; // Already diverted by an earlier attempt.
+    }
+    await this.finish(entry, { status: 'failed', failure_reason: `budget_exhausted: daily auto-refund budget spent; diverted to review_queue` });
+    this.log(`[executor] daily budget spent: ${label(entry)} ${dollars(entry.amount_cents)} diverted to review_queue (needs 1 approver)`);
   }
 
   /** E5: the checks a validator cannot express because they need another document. */

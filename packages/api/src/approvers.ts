@@ -36,6 +36,32 @@ export function loadApprovers(env: Env = process.env): ApproverAccount[] {
   return accounts;
 }
 
+/** True when the connection string points only at this machine. */
+export function isLocalDatabase(uri: string): boolean {
+  const hosts = uri.replace(/^mongodb(\+srv)?:\/\/([^@/]*@)?/i, '').split(/[/?]/)[0] ?? '';
+  return hosts.split(',').every((h) => /^(localhost|127\.0\.0\.1|\[::1\]|::1)(:\d+)?$/i.test(h.trim()));
+}
+
+/**
+ * Refuses the dev default passwords on any database that is not on this machine (Atlas,
+ * a shared server), unless ALLOW_DEV_APPROVERS=1. Returns warnings to print.
+ */
+export function checkApproverSafety(env: Env, mongoUri: string): string[] {
+  const usingDefaults = !env['APPROVERS']?.trim();
+  if (usingDefaults && !isLocalDatabase(mongoUri) && env['ALLOW_DEV_APPROVERS'] !== '1') {
+    throw new InvalidApproversError(
+      'APPROVERS is not set, so the approvers would use the public dev passwords, and the database is not on this machine. ' +
+        'Set APPROVERS="approver-a:<password>,approver-b:<password>" (or ALLOW_DEV_APPROVERS=1 for a throwaway database).',
+    );
+  }
+  const warnings: string[] = [];
+  if (usingDefaults) warnings.push('using the dev approver passwords (set APPROVERS for anything shared)');
+  for (const a of usingDefaults ? [] : loadApprovers(env)) {
+    if (a.password.length < 12) warnings.push(`approver ${a.id} has a password shorter than 12 characters`);
+  }
+  return warnings;
+}
+
 const hash = (password: string, salt: Buffer) => scryptSync(password, salt, 32);
 
 /** Checks passwords against salted scrypt hashes; plain passwords are not kept. */
