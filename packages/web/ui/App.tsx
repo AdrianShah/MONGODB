@@ -42,6 +42,9 @@ const STAGE_LABEL: Record<Stage, string> = {
   error: 'Agent error',
 };
 
+/** Held and paid columns stay the same height as the others until expanded. */
+const COLUMN_PREVIEW = 3;
+
 const TIER_LABEL: Record<string, string> = {
   single_agent: 'Auto',
   peer_review: 'Peer review · 1 approver',
@@ -58,6 +61,7 @@ export function App() {
   const [checked, setChecked] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
   const [traceOpen, setTraceOpen] = useState<TicketCard | null>(null);
+  const [openColumns, setOpenColumns] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     Promise.all([
@@ -144,6 +148,9 @@ export function App() {
       <main className="board">
         {COLUMNS.map((col) => {
           const cards = tickets.filter((t) => col.stages.includes(t.stage));
+          const fold = col.id === 'held' || col.id === 'paid';
+          const shown = fold && !openColumns[col.id] ? cards.slice(0, COLUMN_PREVIEW) : cards;
+          const hidden = cards.length - shown.length;
           return (
             <section key={col.id} className={`column column-${col.id}`} data-testid={`column-${col.id}`}>
               <header>
@@ -152,10 +159,21 @@ export function App() {
               </header>
               <p className="hint">{col.hint}</p>
               <div className="cards">
-                {cards.map((t) => (
+                {shown.map((t) => (
                   <Ticket key={t.ticket_id} ticket={t} me={me} onOpen={() => setTraceOpen(t)} />
                 ))}
               </div>
+              {fold && cards.length > COLUMN_PREVIEW && (
+                <button
+                  type="button"
+                  className="link column-more"
+                  aria-expanded={!!openColumns[col.id]}
+                  data-testid={`expand-${col.id}`}
+                  onClick={() => setOpenColumns((s) => ({ ...s, [col.id]: !s[col.id] }))}
+                >
+                  {hidden > 0 ? `View ${hidden} more` : 'Show less'}
+                </button>
+              )}
             </section>
           );
         })}
@@ -249,8 +267,11 @@ function SignIn({ me, onChange }: { me: string | null; onChange: (id: string | n
 
 function Ticket({ ticket, me, onOpen }: { ticket: TicketCard; me: string | null; onOpen: () => void }) {
   const r = ticket.review;
+  const [open, setOpen] = useState(false);
+  const fold = ticket.stage === 'held' || ticket.stage === 'paid';
+  const approvals = r?.approvals.filter((a) => a.decision === 'approve').map((a) => a.approver_id).join(', ');
   return (
-    <article className={`card stage-${ticket.stage}`} data-testid={`ticket-${ticket.ticket_id}`} data-stage={ticket.stage}>
+    <article className={`card stage-${ticket.stage}${open ? ' is-open' : ''}`} data-testid={`ticket-${ticket.ticket_id}`} data-stage={ticket.stage}>
       <div className="card-head">
         <span className="ticket-id">{ticket.ticket_id}</span>
         <span className={`badge badge-${ticket.stage}`} data-testid="stage">
@@ -268,17 +289,23 @@ function Ticket({ ticket, me, onOpen }: { ticket: TicketCard; me: string | null;
         <span>{ticket.order_id}</span>
       </div>
 
-      {r && ticket.stage === 'held' && <Review review={r} me={me} />}
-      {r && ticket.stage !== 'held' && r.approvals.length > 0 && (
+      {r && ticket.stage === 'held' && <Review review={r} me={me} open={open} onToggle={() => setOpen((v) => !v)} />}
+      {ticket.stage === 'paid' && (
+        <button type="button" className="link view-more" aria-expanded={open} data-testid="view-more" onClick={() => setOpen((v) => !v)}>
+          {open ? 'Show less' : 'View more'}
+        </button>
+      )}
+      {open && r && ticket.stage !== 'held' && approvals && <p className="small">Approved by {approvals}</p>}
+      {!fold && r && r.approvals.length > 0 && (
         <p className="small">Approved by {r.approvals.filter((a) => a.decision === 'approve').map((a) => a.approver_id).join(', ') || 'nobody'}</p>
       )}
-      {ticket.ledger?.status === 'succeeded' && (
+      {(!fold || open) && ticket.ledger?.status === 'succeeded' && (
         <p className="small refund" data-testid="refund-id">
           {ticket.ledger.provider} refund <code>{ticket.ledger.provider_refund_id}</code>
         </p>
       )}
-      {ticket.note && <p className="small note">{ticket.note}</p>}
-      {r?.promotion_error && <p className="small note">Refused by the approved validator: {r.promotion_error}</p>}
+      {(!fold || open) && ticket.note && <p className="small note">{ticket.note}</p>}
+      {(!fold || open) && r?.promotion_error && <p className="small note">Refused by the approved validator: {r.promotion_error}</p>}
 
       {ticket.trace_id && (
         <button className="link" onClick={onOpen} data-testid="open-timeline">
@@ -289,7 +316,7 @@ function Ticket({ ticket, me, onOpen }: { ticket: TicketCard; me: string | null;
   );
 }
 
-function Review({ review, me }: { review: ReviewCard; me: string | null }) {
+function Review({ review, me, open, onToggle }: { review: ReviewCard; me: string | null; open: boolean; onToggle: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const mine = me ? review.approvals.find((a) => a.approver_id === me) : undefined;
@@ -323,18 +350,25 @@ function Review({ review, me }: { review: ReviewCard; me: string | null }) {
           Validator rule broken: <code>{review.rules_broken.join(', ')}</code>
         </p>
       )}
-      <p className="reason" data-testid="reason">{review.reason}</p>
-      <Precedents review={review} />
-      {review.evidence.length > 0 && (
-        <ul className="evidence" data-testid="evidence">
-          {review.evidence.map((e, i) => (
-            <li key={i}>
-              <span className="ev-kind">{e.kind}</span> {e.ref} {e.note ? `· ${e.note}` : ''}
-            </li>
-          ))}
-        </ul>
+      <button type="button" className="link view-more" aria-expanded={open} data-testid="view-more" onClick={onToggle}>
+        {open ? 'Show less' : 'View more'}
+      </button>
+      {open && (
+        <>
+          <p className="reason" data-testid="reason">{review.reason}</p>
+          <Precedents review={review} />
+          {review.evidence.length > 0 && (
+            <ul className="evidence" data-testid="evidence">
+              {review.evidence.map((e, i) => (
+                <li key={i}>
+                  <span className="ev-kind">{e.kind}</span> {e.ref} {e.note ? `· ${e.note}` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+          {me && <ListenButton reviewId={review.id} />}
+        </>
       )}
-      {me && <ListenButton reviewId={review.id} />}
       <div className="actions">
         <button className="approve" disabled={disabled} onClick={() => decide('approve')} data-testid="approve">
           Approve

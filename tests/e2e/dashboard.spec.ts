@@ -56,6 +56,7 @@ test('U1: pipeline cards move through the stages without a reload', async ({ bro
   await expect(card(page, 'intake', 'T-1001')).toBeVisible();
   await propose('T-1001', 'O-5101', 8900);
   await expect(card(page, 'paid', 'T-1001')).toBeVisible();
+  await card(page, 'paid', 'T-1001').getByTestId('view-more').click();
   await expect(card(page, 'paid', 'T-1001').getByTestId('refund-id')).toContainText('re_fake_');
 });
 
@@ -75,6 +76,7 @@ test.describe('dual control on a $5,000 refund', () => {
       await expect(held).toBeVisible();
       await expect(held).toContainText('$5,000.00');
       await expect(held).toContainText('Dual control');
+      await held.getByTestId('view-more').click();
       await expect(held.getByTestId('reason')).not.toBeEmpty();
       await expect(held.getByTestId('evidence')).toContainText('order_line');
       await expect(held.getByTestId('rule')).toContainText('maximum');
