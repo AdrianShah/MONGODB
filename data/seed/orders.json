@@ -1,0 +1,192 @@
+[
+  {
+    "_id": "O-5001", "customer_id": "C-1010",
+    "items": [ { "sku": "WS-RENDER-PRO", "name": "Custom render workstation (configured to order)", "quantity": 1, "unit_price_cents": 420000 } ],
+    "amount_cents": 420000, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5001_h7kq2m", "status": "paid",
+    "created_at": { "$date": "2024-03-12T16:20:00Z" }
+  },
+  {
+    "_id": "O-5002", "customer_id": "C-1010",
+    "items": [ { "sku": "KB-MS-WL-SET", "name": "Wireless keyboard and mouse set", "quantity": 4, "unit_price_cents": 12900 } ],
+    "amount_cents": 51600, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5002_c3vz8r", "status": "paid",
+    "created_at": { "$date": "2025-06-02T10:05:00Z" }
+  },
+  {
+    "_id": "O-5013", "customer_id": "C-1010",
+    "items": [ { "sku": "MON-27-5K", "name": "27-inch 5K display", "quantity": 1, "unit_price_cents": 142500 } ],
+    "amount_cents": 142500, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5013_w1np6d", "status": "paid",
+    "created_at": { "$date": "2025-11-18T14:40:00Z" }
+  },
+  {
+    "_id": "O-5003", "customer_id": "C-1001",
+    "items": [ { "sku": "THROW-WOOL-OAT", "name": "Wool throw blanket, oat", "quantity": 1, "unit_price_cents": 7800 } ],
+    "amount_cents": 7800, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5003_t9bx4e", "status": "paid",
+    "created_at": { "$date": "2025-11-20T19:02:00Z" }
+  },
+  {
+    "_id": "O-5004", "customer_id": "C-1002",
+    "items": [ { "sku": "JKT-RAIN-M", "name": "Packable rain jacket, M", "quantity": 1, "unit_price_cents": 16500 } ],
+    "amount_cents": 16500, "refunded_cents": 16500, "currency": "usd", "payment_id": "pi_fake_o5004_r2mf7a", "status": "refunded",
+    "created_at": { "$date": "2026-02-14T12:30:00Z" }
+  },
+  {
+    "_id": "O-5005", "customer_id": "C-1004",
+    "items": [ { "sku": "DUTCH-OVEN-6QT", "name": "Enamelled Dutch oven, 6 qt", "quantity": 1, "unit_price_cents": 11900 } ],
+    "amount_cents": 11900, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5005_k5yd1s", "status": "paid",
+    "created_at": { "$date": "2026-05-09T17:45:00Z" }
+  },
+  {
+    "_id": "O-5006", "customer_id": "C-1006",
+    "items": [ { "sku": "BOOT-HIKE-44", "name": "Leather hiking boots, EU 44", "quantity": 1, "unit_price_cents": 18900 } ],
+    "amount_cents": 18900, "refunded_cents": 18900, "currency": "usd", "payment_id": "pi_fake_o5006_g8qe3n", "status": "refunded",
+    "created_at": { "$date": "2026-03-03T09:12:00Z" }
+  },
+  {
+    "_id": "O-5007", "customer_id": "C-1006",
+    "items": [ { "sku": "FLEECE-ZIP-L", "name": "Half-zip fleece, L", "quantity": 1, "unit_price_cents": 9800 } ],
+    "amount_cents": 9800, "refunded_cents": 9800, "currency": "usd", "payment_id": "pi_fake_o5007_u4jw9p", "status": "refunded",
+    "created_at": { "$date": "2026-07-21T15:33:00Z" }
+  },
+  {
+    "_id": "O-5008", "customer_id": "C-1007",
+    "items": [ { "sku": "MEMBER-PLUS-1Y", "name": "Annual membership (Plus)", "quantity": 1, "unit_price_cents": 9900 } ],
+    "amount_cents": 9900, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5008_a6lc2v", "status": "paid",
+    "created_at": { "$date": "2025-10-15T00:00:00Z" }
+  },
+  {
+    "_id": "O-5009", "customer_id": "C-1009",
+    "items": [ { "sku": "EARBUDS-ANC", "name": "Wireless noise-cancelling earbuds", "quantity": 1, "unit_price_cents": 12900 } ],
+    "amount_cents": 12900, "refunded_cents": 4000, "currency": "usd", "payment_id": "pi_fake_o5009_m3xt8h", "status": "partially_refunded",
+    "created_at": { "$date": "2025-08-30T11:11:00Z" }
+  },
+  {
+    "_id": "O-5010", "customer_id": "C-1012",
+    "items": [ { "sku": "PICNIC-BLANKET", "name": "Waterproof picnic blanket", "quantity": 1, "unit_price_cents": 3499 } ],
+    "amount_cents": 3499, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5010_e7rk5b", "status": "paid",
+    "created_at": { "$date": "2026-07-04T13:00:00Z" }
+  },
+  {
+    "_id": "O-5011", "customer_id": "C-1008",
+    "items": [ { "sku": "GRINDER-BURR", "name": "Conical burr coffee grinder", "quantity": 1, "unit_price_cents": 18900 } ],
+    "amount_cents": 18900, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5011_n2fg6y", "status": "paid",
+    "created_at": { "$date": "2026-01-10T08:25:00Z" }
+  },
+  {
+    "_id": "O-5012", "customer_id": "C-1003",
+    "items": [ { "sku": "SHEETS-LIN-Q", "name": "Linen sheet set, queen", "quantity": 1, "unit_price_cents": 8900 } ],
+    "amount_cents": 8900, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5012_z1sd4q", "status": "paid",
+    "created_at": { "$date": "2026-04-22T21:14:00Z" }
+  },
+
+  {
+    "_id": "O-5101", "customer_id": "C-1001",
+    "items": [
+      { "sku": "LAMP-CER-SAGE", "name": "Ceramic table lamp, sage", "quantity": 1, "unit_price_cents": 8900 },
+      { "sku": "BULB-LED-4PK", "name": "Warm LED bulbs, 4-pack", "quantity": 1, "unit_price_cents": 1200 },
+      { "sku": "SHIP-STD", "name": "Standard shipping", "quantity": 1, "unit_price_cents": 595 }
+    ],
+    "amount_cents": 10695, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5101_q8wn3c", "status": "paid",
+    "created_at": { "$date": "2026-10-29T18:40:00Z" }
+  },
+  {
+    "_id": "O-5102", "customer_id": "C-1002",
+    "items": [
+      { "sku": "SHOE-TRAIL-42", "name": "Trail running shoes, EU 42", "quantity": 1, "unit_price_cents": 11800 },
+      { "sku": "SOCK-RUN-3PK", "name": "Running socks, 3-pack", "quantity": 1, "unit_price_cents": 1650 }
+    ],
+    "amount_cents": 13450, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5102_d5hj7k", "status": "paid",
+    "created_at": { "$date": "2026-10-28T07:52:00Z" }
+  },
+  {
+    "_id": "O-5103", "customer_id": "C-1003",
+    "items": [
+      { "sku": "DUVET-LIN-Q", "name": "Linen duvet cover, queen", "quantity": 1, "unit_price_cents": 14500 },
+      { "sku": "SHIP-EXP-2D", "name": "Express 2-day shipping", "quantity": 1, "unit_price_cents": 2495 }
+    ],
+    "amount_cents": 16995, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5103_y4ta9g", "status": "paid",
+    "created_at": { "$date": "2026-10-30T10:15:00Z" }
+  },
+  {
+    "_id": "O-5104", "customer_id": "C-1004",
+    "items": [
+      { "sku": "SKILLET-CI-12", "name": "Cast iron skillet, 12 in", "quantity": 1, "unit_price_cents": 4599 },
+      { "sku": "KNIFE-CHEF-8", "name": "Chef's knife, 8 in", "quantity": 1, "unit_price_cents": 7900 },
+      { "sku": "BOARD-ENDGRAIN", "name": "End-grain cutting board", "quantity": 1, "unit_price_cents": 6200 },
+      { "sku": "APRON-LINEN", "name": "Linen apron, charcoal", "quantity": 1, "unit_price_cents": 2400 }
+    ],
+    "amount_cents": 21099, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5104_b7pm2x", "status": "paid",
+    "created_at": { "$date": "2026-11-02T14:08:00Z" }
+  },
+  {
+    "_id": "O-5105", "customer_id": "C-1005",
+    "items": [
+      { "sku": "HP-ANC-OVER", "name": "Over-ear noise-cancelling headphones", "quantity": 1, "unit_price_cents": 19900 },
+      { "sku": "HP-CASE-HARD", "name": "Hard-shell headphone travel case", "quantity": 1, "unit_price_cents": 2900 },
+      { "sku": "CABLE-USBC-1M", "name": "USB-C charging cable, 1 m", "quantity": 2, "unit_price_cents": 1450 }
+    ],
+    "amount_cents": 25700, "refunded_cents": 2900, "currency": "usd", "payment_id": "pi_fake_o5105_f1cr8u", "status": "partially_refunded",
+    "created_at": { "$date": "2026-10-12T16:30:00Z" }
+  },
+  {
+    "_id": "O-5106", "customer_id": "C-1006",
+    "items": [
+      { "sku": "SHELL-WP-BLU-L", "name": "Waterproof shell jacket, blue, L", "quantity": 1, "unit_price_cents": 21900 },
+      { "sku": "BEANIE-MERINO", "name": "Merino beanie", "quantity": 1, "unit_price_cents": 3200 }
+    ],
+    "amount_cents": 25100, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5106_s6vb1l", "status": "paid",
+    "created_at": { "$date": "2026-10-19T12:00:00Z" }
+  },
+  {
+    "_id": "O-5107", "customer_id": "C-1007",
+    "items": [ { "sku": "MEMBER-PLUS-1Y", "name": "Annual membership renewal (Plus)", "quantity": 1, "unit_price_cents": 9900 } ],
+    "amount_cents": 9900, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5107_j9ke4w", "status": "paid",
+    "created_at": { "$date": "2026-10-15T00:00:00Z" }
+  },
+  {
+    "_id": "O-5108", "customer_id": "C-1008",
+    "items": [
+      { "sku": "ESPRESSO-DB", "name": "Dual-boiler espresso machine", "quantity": 1, "unit_price_cents": 44900 },
+      { "sku": "BEANS-HOUSE-1KG", "name": "House espresso beans, 1 kg", "quantity": 2, "unit_price_cents": 2400 },
+      { "sku": "PITCHER-MILK", "name": "Stainless milk pitcher", "quantity": 1, "unit_price_cents": 1800 }
+    ],
+    "amount_cents": 51500, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5108_p2zq7t", "status": "paid",
+    "created_at": { "$date": "2026-10-24T09:45:00Z" }
+  },
+  {
+    "_id": "O-5109", "customer_id": "C-1009",
+    "items": [
+      { "sku": "LAPTOP-14-32-1T", "name": "14-inch laptop, 32 GB RAM / 1 TB", "quantity": 1, "unit_price_cents": 129900 },
+      { "sku": "SLEEVE-14", "name": "Laptop sleeve, 14 in", "quantity": 1, "unit_price_cents": 3900 }
+    ],
+    "amount_cents": 133800, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5109_x3gu5n", "status": "paid",
+    "created_at": { "$date": "2026-10-26T20:10:00Z" }
+  },
+  {
+    "_id": "O-5110", "customer_id": "C-1011",
+    "items": [
+      { "sku": "CHAIR-ERGO-MESH", "name": "Ergonomic mesh office chair", "quantity": 2, "unit_price_cents": 68900 },
+      { "sku": "MAT-CHAIR-PC", "name": "Polycarbonate chair mat", "quantity": 2, "unit_price_cents": 4500 }
+    ],
+    "amount_cents": 146800, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5110_l8dy2f", "status": "paid",
+    "created_at": { "$date": "2026-11-03T11:25:00Z" }
+  },
+  {
+    "_id": "O-5111", "customer_id": "C-1010",
+    "items": [
+      { "sku": "WS-RENDER-ULTRA", "name": "Custom render workstation, dual GPU (configured to order)", "quantity": 1, "unit_price_cents": 500000 },
+      { "sku": "MON-27-5K", "name": "27-inch 5K display", "quantity": 2, "unit_price_cents": 142500 },
+      { "sku": "SVC-CALIBRATE", "name": "On-site colour calibration service", "quantity": 1, "unit_price_cents": 15000 }
+    ],
+    "amount_cents": 800000, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5111_v5ma9r", "status": "paid",
+    "created_at": { "$date": "2026-10-20T15:00:00Z" }
+  },
+  {
+    "_id": "O-5112", "customer_id": "C-1012",
+    "items": [
+      { "sku": "SPKR-BT-PORT", "name": "Portable Bluetooth speaker", "quantity": 1, "unit_price_cents": 5999 },
+      { "sku": "STRAP-SILICONE", "name": "Silicone carry strap", "quantity": 1, "unit_price_cents": 1299 }
+    ],
+    "amount_cents": 7298, "refunded_cents": 0, "currency": "usd", "payment_id": "pi_fake_o5112_k4es6h", "status": "paid",
+    "created_at": { "$date": "2026-11-05T17:20:00Z" }
+  }
+]

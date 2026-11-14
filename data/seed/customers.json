@@ -1,0 +1,14 @@
+[
+  { "_id": "C-1001", "name": "Maya Okafor", "email": "maya.okafor@example.com", "created_at": { "$date": "2024-09-03T14:12:00Z" } },
+  { "_id": "C-1002", "name": "Daniel Reyes", "email": "d.reyes@example.com", "created_at": { "$date": "2025-01-17T09:40:00Z" } },
+  { "_id": "C-1003", "name": "Priya Natarajan", "email": "priya.n@example.com", "created_at": { "$date": "2025-03-22T18:05:00Z" } },
+  { "_id": "C-1004", "name": "Tom Lindqvist", "email": "tom.lindqvist@example.com", "created_at": { "$date": "2025-07-08T11:30:00Z" } },
+  { "_id": "C-1005", "name": "Aisha Bello", "email": "aisha.bello@example.com", "created_at": { "$date": "2026-02-11T16:48:00Z" } },
+  { "_id": "C-1006", "name": "Marcus Chen", "email": "marcus.chen@example.com", "created_at": { "$date": "2024-11-29T20:15:00Z" } },
+  { "_id": "C-1007", "name": "Elena Petrova", "email": "elena.petrova@example.com", "created_at": { "$date": "2024-10-15T08:00:00Z" } },
+  { "_id": "C-1008", "name": "Jordan Whitfield", "email": "jwhitfield@example.com", "created_at": { "$date": "2025-12-30T13:22:00Z" } },
+  { "_id": "C-1009", "name": "Sofia Marchetti", "email": "sofia.marchetti@example.com", "created_at": { "$date": "2025-05-19T10:10:00Z" } },
+  { "_id": "C-1010", "name": "Harbor & Pine Design Studio (Rachel Kim)", "email": "accounts@harborandpine.example.com", "created_at": { "$date": "2022-04-06T15:00:00Z" } },
+  { "_id": "C-1011", "name": "Kevin O'Brien", "email": "kobrien@example.com", "created_at": { "$date": "2026-06-02T07:55:00Z" } },
+  { "_id": "C-1012", "name": "Nadia Haddad", "email": "nadia.haddad@example.com", "created_at": { "$date": "2025-09-12T19:30:00Z" } }
+]

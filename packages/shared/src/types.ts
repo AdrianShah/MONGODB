@@ -1,0 +1,247 @@
+/**
+ * Document shapes for every collection in PRD section 7.
+ *
+ * Conventions:
+ * - Money is always integer cents in a field ending `_cents` (int or long on
+ *   the server; validators reject doubles).
+ * - Source data (tickets, orders, customers) uses readable string IDs such as
+ *   "T-1001"; everything the pipeline writes uses ObjectId `_id`s.
+ * - Timestamps are BSON dates (`Date` in JS), never strings.
+ *
+ * These types describe what the code writes. The validators in schema.ts are
+ * the source of truth for what the server accepts; when they disagree, the
+ * validator wins and this file should be fixed.
+ */
+import type { ObjectId } from 'mongodb';
+import type { CollectionName } from './collections.js';
+
+export type Currency = 'usd';
+
+/** Policy tier a refund falls into (PRD section 5). */
+export type Tier = 'single_agent' | 'peer_review' | 'human_required' | 'blocked';
+
+// ---------------------------------------------------------------------------
+// Source data (written by the seed script, read by the agent)
+// ---------------------------------------------------------------------------
+
+export interface CustomerDoc {
+  _id: string;
+  name: string;
+  email: string;
+  created_at: Date;
+}
+
+export interface OrderItem {
+  sku: string;
+  name: string;
+  quantity: number;
+  unit_price_cents: number;
+}
+
+export interface OrderDoc {
+  _id: string;
+  customer_id: string;
+  items: OrderItem[];
+  amount_cents: number;
+  /** Total already refunded; the executor checks this before paying (E5). */
+  refunded_cents: number;
+  currency: Currency;
+  /** Payment the refund is issued against (Stripe PaymentIntent ID, or a fake ID in seed data). */
+  payment_id: string;
+  status: 'paid' | 'partially_refunded' | 'refunded';
+  created_at: Date;
+}
+
+export interface TicketDoc {
+  _id: string;
+  customer_id: string;
+  order_id: string;
+  subject: string;
+  body: string;
+  status: 'open' | 'proposed' | 'declined' | 'resolved';
+  created_at: Date;
+}
+
+// ---------------------------------------------------------------------------
+// Policy
+// ---------------------------------------------------------------------------
+
+export interface PolicyDoc {
+  _id: ObjectId;
+  version: number;
+  active: boolean;
+  auto_cap_cents: number;
+  single_approver_cap_cents: number;
+  hard_cap_cents: number;
+  created_at: Date;
+}
+
+// ---------------------------------------------------------------------------
+// Agent output
+// ---------------------------------------------------------------------------
+
+export interface AgentTraceDoc {
+  _id: ObjectId;
+  trace_id: string;
+  ticket_id: string;
+  /** Order of events within one trace, starting at 0. */
+  seq: number;
+  kind: 'tool_call' | 'tool_result' | 'reasoning' | 'decision' | 'error';
+  tool?: string;
+  input?: unknown;
+  output?: unknown;
+  text?: string;
+  created_at: Date;
+}
+
+/** One piece of evidence the agent cites. The validator only requires an object. */
+export interface Evidence {
+  kind: string;
+  ref?: string;
+  note?: string;
+  [key: string]: unknown;
+}
+
+/** Fields shared by intents, review_queue and approved. */
+export interface RefundProposal {
+  trace_id: string;
+  ticket_id: string;
+  order_id: string;
+  customer_id: string;
+  amount_cents: number;
+  currency: Currency;
+  reason: string;
+  evidence: Evidence[];
+  policy_version: number;
+  /** Hash of ticket ID and order ID (A4). Unique per collection. */
+  idempotency_key: string;
+  created_at: Date;
+}
+
+/** `intents`: auto-approvable proposals. Exactly the PRD validator's fields, nothing else. */
+export interface IntentDoc extends RefundProposal {
+  _id: ObjectId;
+}
+
+/** The server's validation error, stored on a held proposal (A2). */
+export interface ValidatorErrorRecord {
+  code: number;
+  errmsg?: string;
+  errInfo?: unknown;
+}
+
+export interface ReviewQueueDoc extends RefundProposal {
+  _id: ObjectId;
+  tier: Tier;
+  required_approvals: number;
+  status: 'pending' | 'approved' | 'rejected' | 'blocked';
+  validator_error: ValidatorErrorRecord;
+  updated_at?: Date;
+}
+
+// ---------------------------------------------------------------------------
+// Approvals
+// ---------------------------------------------------------------------------
+
+export interface ApprovalDoc {
+  _id: ObjectId;
+  review_id: ObjectId;
+  approver_id: string;
+  decision: 'approve' | 'reject';
+  note?: string;
+  created_at: Date;
+}
+
+export interface ApprovalEntry {
+  approver_id: string;
+  approved_at: Date;
+}
+
+/** `approved`: fully approved refunds, inserted once per review. */
+export interface ApprovedDoc extends RefundProposal {
+  _id: ObjectId;
+  review_id: ObjectId;
+  approvals: ApprovalEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// Executor
+// ---------------------------------------------------------------------------
+
+export interface LedgerDoc {
+  _id: ObjectId;
+  source_type: 'intent' | 'approved';
+  /** `_id` of the intent or approved document. Unique: one payout per source. */
+  source_id: ObjectId;
+  trace_id: string;
+  order_id: string;
+  customer_id: string;
+  amount_cents: number;
+  currency: Currency;
+  /** Sent to the payment provider unchanged on every retry. */
+  idempotency_key: string;
+  status: 'pending' | 'succeeded' | 'failed';
+  provider: string;
+  provider_refund_id?: string;
+  failure_reason?: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/** `budgets`: one document per day, `_id` is the UTC date "YYYY-MM-DD". */
+export interface BudgetDoc {
+  _id: string;
+  cap_cents: number;
+  spent_cents: number;
+  updated_at?: Date;
+}
+
+/** `executor_state`: one document per watched stream, `_id` is the stream name. */
+export interface ExecutorStateDoc {
+  _id: string;
+  resume_token: unknown;
+  updated_at: Date;
+}
+
+// ---------------------------------------------------------------------------
+// Lookups and shared helpers
+// ---------------------------------------------------------------------------
+
+/** Maps each collection name to its document type: `db.collection<CollectionDocs['intents']>(...)`. */
+export interface CollectionDocs {
+  tickets: TicketDoc;
+  orders: OrderDoc;
+  customers: CustomerDoc;
+  policies: PolicyDoc;
+  agent_traces: AgentTraceDoc;
+  intents: IntentDoc;
+  review_queue: ReviewQueueDoc;
+  approvals: ApprovalDoc;
+  approved: ApprovedDoc;
+  ledger: LedgerDoc;
+  budgets: BudgetDoc;
+  executor_state: ExecutorStateDoc;
+}
+
+// Compile-time check that CollectionDocs covers exactly the names in COLLECTIONS.
+type _AssertSameKeys<A, B> = [Exclude<A, B>, Exclude<B, A>] extends [never, never] ? true : never;
+const _collectionDocsComplete: _AssertSameKeys<keyof CollectionDocs, CollectionName> = true;
+void _collectionDocsComplete;
+
+/**
+ * What an idempotent setup step did. Used by applySchema, applyRoles and
+ * ensureUsers so `npm run setup` can report "no changes" on a second run (O1).
+ */
+export interface ChangeSummary {
+  created: string[];
+  updated: string[];
+  unchanged: string[];
+}
+
+export function emptyChangeSummary(): ChangeSummary {
+  return { created: [], updated: [], unchanged: [] };
+}
+
+export function hasChanges(summary: ChangeSummary): boolean {
+  return summary.created.length > 0 || summary.updated.length > 0;
+}

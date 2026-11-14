@@ -1,0 +1,39 @@
+{
+  "name": "escrowops",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db": "tsx scripts/dev-db.ts",
+    "spike": "tsx scripts/spike.ts",
+    "setup": "tsx scripts/setup.ts",
+    "seed": "tsx scripts/seed.ts",
+    "reset": "tsx scripts/reset.ts",
+    "redteam": "tsx scripts/redteam.ts"
+  },
+  "dependencies": {
+    "@escrowops/shared": "*",
+    "dotenv": "^18.0.10",
+    "mongodb": "^7.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "mongodb-memory-server": "^11.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "config": {
+    "mongodbMemoryServer": {
+      "version": "8.0.38"
+    }
+  }
+}

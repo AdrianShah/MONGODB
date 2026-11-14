@@ -1,0 +1,22 @@
+# Optional: a local Atlas-like MongoDB (single-node replica set with auth).
+# Not needed for `npm test`, which starts an in-memory replica set itself.
+#
+#   docker compose up -d
+#   export MONGODB_URI='mongodb://admin:admin-dev-password@localhost:27017/?directConnection=true&authSource=admin'
+#   npm run spike && npm test
+services:
+  mongodb:
+    image: mongodb/mongodb-atlas-local:8.0
+    hostname: mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGODB_INITDB_ROOT_USERNAME: admin
+      MONGODB_INITDB_ROOT_PASSWORD: admin-dev-password
+    volumes:
+      - escrowops-data:/data/db
+      - escrowops-config:/data/configdb
+
+volumes:
+  escrowops-data:
+  escrowops-config:
