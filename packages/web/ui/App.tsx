@@ -12,6 +12,7 @@ import {
   type TimelineEvent,
   type TimelineIntegrity,
 } from './api.js';
+import { Precedents } from './Precedents.js';
 import { FreezeBanner, FreezeControl } from './KillSwitch.js';
 import type { FreezeSummary } from '../src/types.js';
 import { ListenButton, NarrateButton } from './voice.js';
@@ -299,6 +300,7 @@ function Review({ review, me }: { review: ReviewCard; me: string | null }) {
         </p>
       )}
       <p className="reason" data-testid="reason">{review.reason}</p>
+      <Precedents review={review} />
       {review.evidence.length > 0 && (
         <ul className="evidence" data-testid="evidence">
           {review.evidence.map((e, i) => (

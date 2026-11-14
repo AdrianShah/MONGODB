@@ -56,12 +56,13 @@ describe('apply-policy', () => {
   });
 
   it('the agent picks up the new version and tiers from the database', async () => {
-    const { policy } = await applyPolicy(t().db, { auto_cap_cents: 75_000 });
+    const { policy } = await applyPolicy(t().db, { auto_cap_cents: 150_000 });
     const db = await agentDb();
-    const r = await resolveTicket('T-1010', { db, model: 'm', createMessage: scriptedModel(proposeScript('T-1010', 'O-5110', 68_900)).createMessage });
-    expect(r.status).toBe('proposed'); // $689 is now within the auto cap
+    // T-1009, not T-1010: one $689 chair is off-precedent (A7) and would be held whatever the cap.
+    const r = await resolveTicket('T-1009', { db, model: 'm', createMessage: scriptedModel(proposeScript('T-1009', 'O-5109', 129_900)).createMessage });
+    expect(r.status).toBe('proposed'); // $1,299 is now within the auto cap
     // Versions only go up, even after a reset re-activates v1.
-    expect(await t().db.collection<IntentDoc>(COLLECTIONS.intents).findOne({ ticket_id: 'T-1010' })).toMatchObject({ policy_version: policy.version });
+    expect(await t().db.collection<IntentDoc>(COLLECTIONS.intents).findOne({ ticket_id: 'T-1009' })).toMatchObject({ policy_version: policy.version });
   });
 
   it('with no change it only re-applies the active validators; npm run reset restores the seed policy', async () => {

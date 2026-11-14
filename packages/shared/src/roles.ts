@@ -132,6 +132,9 @@ export const ROLE_DEFINITIONS: readonly RoleDefinition[] = Object.freeze([
       { collection: C.budgets, actions: ['find', 'insert', 'update'] },
       { collection: C.executor_state, actions: ['find', 'insert', 'update'] },
       { collection: C.orders, actions: ['find'] },
+      // A7: re-derives the precedent ceiling of an auto refund before paying it.
+      { collection: C.tickets, actions: ['find'] },
+      { collection: C.precedents, actions: ['find'] },
     ],
   },
   {

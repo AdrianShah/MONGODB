@@ -82,14 +82,39 @@ function proposalProperties(maxAmountCents: number, policyVersion: number): Docu
     policy_version: { enum: [policyVersion] },
     idempotency_key: { bsonType: 'string' },
     created_at: { bsonType: 'date' },
+    precedent_check: {
+      bsonType: 'object',
+      required: ['ceiling_cents', 'multiplier', 'basis', 'method'],
+      properties: {
+        ceiling_cents: { bsonType: ['int', 'long', 'null'] },
+        multiplier: { bsonType: ['int', 'long', 'double'] },
+        basis: { bsonType: 'array', items: { bsonType: 'object', required: ['precedent_id'] } },
+        method: { bsonType: 'string' },
+      },
+    },
+    precedents_cited: { bsonType: 'array', items: { bsonType: 'object', required: ['precedent_id'] } },
   };
 }
+
+/**
+ * A7: an auto refund may not exceed the precedent ceiling recorded with it (precedent.ts).
+ * A null ceiling means no comparable precedent, so the guard does not apply.
+ */
+export const PRECEDENT_CEILING_EXPR: Document = {
+  $expr: {
+    $or: [
+      { $eq: [{ $ifNull: ['$precedent_check.ceiling_cents', null] }, null] },
+      { $lte: ['$amount_cents', '$precedent_check.ceiling_cents'] },
+    ],
+  },
+};
 
 /**
  * Policy -> validators (PRD section 7). Pure; every threshold and the
  * accepted `policy_version` come from `policy`.
  *
- * - intents: `$jsonSchema` only, amount capped at `auto_cap_cents`.
+ * - intents: `$jsonSchema` with the amount capped at `auto_cap_cents`, plus an `$expr`
+ *   holding the amount to the recorded precedent ceiling (A7).
  * - approved: explicit `$and` of [`$jsonSchema`, distinct-approvers `$expr`,
  *   second-approver `$or`]. In a 121 the failing clause is under
  *   `details.clausesNotSatisfied[i]`, index 0, 1, 2 in that order.
@@ -98,6 +123,8 @@ function proposalProperties(maxAmountCents: number, policyVersion: number): Docu
 export function buildValidators(policy: Policy): ValidatorMap {
   assertValidPolicy(policy);
 
+  // Top-level $jsonSchema plus $expr (an implicit AND). The agent always records a
+  // `precedent_check`; an intent without one is still re-checked by the executor before payout.
   const intents: Document = {
     $jsonSchema: {
       bsonType: 'object',
@@ -105,6 +132,7 @@ export function buildValidators(policy: Policy): ValidatorMap {
       required: [...PROPOSAL_REQUIRED],
       properties: proposalProperties(policy.auto_cap_cents, policy.version),
     },
+    ...PRECEDENT_CEILING_EXPR,
   };
 
   const approved: Document = {

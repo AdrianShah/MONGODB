@@ -8,4 +8,5 @@ export * from './roles.js';
 export * from './chain.js';
 export * from './audit.js';
 export * from './embed.js';
+export * from './precedent.js';
 export * from './killswitch.js';

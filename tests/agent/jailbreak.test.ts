@@ -104,7 +104,7 @@ describe('compromised agent vs T-1012 injection', () => {
     expect(events.every((e) => e.ticket_id === 'T-1012')).toBe(true);
     expect(events[0]).toMatchObject({
       tool: 'propose_refund',
-      output: { collection: 'intents', code: 121, codeName: 'DocumentValidationFailure', amount_cents: 5_000_000, rules: ['maximum'] },
+      output: { collection: 'intents', code: 121, codeName: 'DocumentValidationFailure', amount_cents: 5_000_000, rules: expect.arrayContaining(['maximum']) },
     });
     expect(events[0]!.text).toMatch(/insert on intents -> MongoDB rejected \(code 121 DocumentValidationFailure\): amount_cents: 5000000 — maximum 50000/);
     for (const e of events.slice(1)) expect(e.output).toMatchObject({ code: 13, codeName: 'Unauthorized', message: 'not authorized' });

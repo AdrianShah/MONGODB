@@ -73,8 +73,8 @@ describe('propose_refund (A2, A4)', () => {
     expect(await intents().countDocuments()).toBe(0);
     const review = await reviews().findOne({ ticket_id: 'T-1009' });
     expect(review).toMatchObject({ tier: 'peer_review', required_approvals: 1, status: 'pending', amount_cents: 129_900 });
-    expect(review?.validator_error.code).toBe(121);
-    expect(failedRules(review?.validator_error.errInfo)).toContain('maximum');
+    expect(review?.validator_error?.code).toBe(121);
+    expect(failedRules(review?.validator_error?.errInfo)).toContain('maximum');
   });
 
   it('a $5,000 proposal needs two approvers; over $10,000 is tier blocked', async () => {

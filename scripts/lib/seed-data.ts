@@ -27,8 +27,11 @@ import {
   DEFAULT_POLICY,
   applySchema,
   embed,
+  embedPrecedents,
+  embeddingConfig,
   ensureVectorIndex,
   precedentText,
+  type EmbeddingConfig,
   tierFor,
   type ChangeSummary,
   type PrecedentDoc,
@@ -55,10 +58,18 @@ export const SEED_COLLECTIONS = [
   COLLECTIONS.precedents,
 ] as const satisfies readonly CollectionName[];
 
-/** A7: past resolved disputes from data/seed/precedents.json, with their embeddings. */
+type RawPrecedent = Omit<PrecedentDoc, 'embedding' | 'decided_at'> & { decided_at: string };
+const readPrecedents = (dir: string) =>
+  (JSON.parse(readFileSync(join(dir, 'precedents.json'), 'utf8')) as RawPrecedent[]).map((p) => ({ ...p, decided_at: new Date(p.decided_at) }));
+
+/** A7: past resolved disputes from data/seed/precedents.json, with the local (offline) embedding. */
 export function loadPrecedents(dir: string = SEED_DIR): PrecedentDoc[] {
-  const raw = JSON.parse(readFileSync(join(dir, 'precedents.json'), 'utf8')) as Array<Omit<PrecedentDoc, 'embedding' | 'decided_at'> & { decided_at: string }>;
-  return raw.map((p) => ({ ...p, decided_at: new Date(p.decided_at), embedding: embed(precedentText(p)) }));
+  return readPrecedents(dir).map((p) => ({ ...p, embedding: embed(precedentText(p)), embedding_model: embeddingConfig({}).model }));
+}
+
+/** A7: the same precedents embedded with the active model (Voyage when VOYAGE_API_KEY is set, else local). */
+export async function loadPrecedentsEmbedded(dir: string = SEED_DIR, cfg: EmbeddingConfig = embeddingConfig()): Promise<PrecedentDoc[]> {
+  return embedPrecedents(readPrecedents(dir), cfg);
 }
 
 /** Everything the pipeline writes during a run. Reset empties these. */
@@ -336,7 +347,7 @@ export interface SeedSummary {
   tickets: CollectionSeedResult;
   policy: { version: number; created: boolean; updated: boolean; deactivated: number };
   /** A7: precedents and whether the Atlas Vector Search index is available on this server. */
-  precedents: CollectionSeedResult & { vectorIndex: 'created' | 'exists' | 'unavailable' };
+  precedents: CollectionSeedResult & { vectorIndex: 'created' | 'updated' | 'exists' | 'unavailable'; model: string };
 }
 
 export interface SeedOptions {
@@ -390,13 +401,15 @@ export async function seedDatabase(db: Db, options: SeedOptions = {}): Promise<S
     }
   }
 
+  const embedding = embeddingConfig();
+  const precedentSeed = await loadPrecedentsEmbedded(SEED_DIR, embedding);
   const [customers, orders, tickets, precedentDocs] = await Promise.all([
     upsertExact(db, COLLECTIONS.customers, data.customers),
     upsertExact(db, COLLECTIONS.orders, orderDocs),
     upsertExact(db, COLLECTIONS.tickets, data.tickets),
-    upsertExact(db, COLLECTIONS.precedents, loadPrecedents()),
+    upsertExact(db, COLLECTIONS.precedents, precedentSeed),
   ]);
-  const vectorIndex = await ensureVectorIndex(db);
+  const vectorIndex = await ensureVectorIndex(db, embedding.dimensions);
 
   // Policy `_id` is an ObjectId, so match on version and keep the first
   // created_at; a second run leaves the document byte-for-byte unchanged.
@@ -424,7 +437,7 @@ export async function seedDatabase(db: Db, options: SeedOptions = {}): Promise<S
     customers,
     orders,
     tickets,
-    precedents: { ...precedentDocs, vectorIndex },
+    precedents: { ...precedentDocs, vectorIndex, model: embedding.model },
     policy: {
       version: policy.version,
       created: upsert.upsertedCount > 0,
@@ -447,7 +460,7 @@ export function formatSeedSummary(summary: SeedSummary): string {
     formatCollection('customers', summary.customers),
     formatCollection('orders', summary.orders),
     formatCollection('tickets', summary.tickets),
-    `${formatCollection('precedents', summary.precedents)}; vector index ${summary.precedents.vectorIndex}`,
+    `${formatCollection('precedents', summary.precedents)}; ${summary.precedents.model}, vector index ${summary.precedents.vectorIndex}`,
     `  policy     v${p.version} active (${p.created ? 'created' : p.updated ? 'updated' : 'unchanged'}${p.deactivated ? `, ${p.deactivated} other version(s) deactivated` : ''})`,
   ].join('\n');
 }

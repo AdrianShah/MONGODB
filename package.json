@@ -33,6 +33,7 @@
     "seed": "tsx scripts/seed.ts",
     "reset": "tsx scripts/reset.ts",
     "redteam": "tsx scripts/redteam.ts",
+    "precedents:learn": "tsx scripts/learn-precedents.ts",
     "freeze": "tsx scripts/freeze.ts",
     "unfreeze": "tsx scripts/freeze.ts --unfreeze",
     "agent:freeze": "tsx scripts/freeze.ts",

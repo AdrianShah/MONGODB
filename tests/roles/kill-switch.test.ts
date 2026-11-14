@@ -140,6 +140,13 @@ describe('K1-K3 the freeze is a database privilege change', () => {
 });
 
 describe('K4-K6 rollback', () => {
+  // These fixtures' intents reference tickets that do not exist, so the executor's precedent
+  // re-check (fail-closed) would divert them. Without precedents there is no ceiling, which keeps
+  // these tests about the kill switch alone.
+  beforeEach(async () => {
+    await t().db.collection(COLLECTIONS.precedents).deleteMany({});
+  });
+
   it('K4: an intent proposed before the freeze and not yet paid is voided and never pays', async () => {
     const order = await seedOrder(t().db);
     const intent = await insertIntent(t().db, order, 4_200);
