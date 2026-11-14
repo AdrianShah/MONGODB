@@ -1,0 +1,28 @@
+{
+  "name": "@escrowops/executor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Watches intents and approved, pays each refund exactly once.",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "fake-provider": "tsx src/providers/fake-http-server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --project unit",
+    "test:chaos": "vitest run --project chaos"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "mongodb": "^7.9.0",
+    "stripe": "^23.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
