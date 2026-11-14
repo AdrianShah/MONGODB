@@ -9,6 +9,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { COLLECTIONS, DEFAULT_POLICY, type Policy, type PolicyDoc, type TicketDoc } from '@escrowops/shared';
 import { SYSTEM_PROMPT } from './prompt.js';
 import { TicketTools, TOOLS, ToolError, type Decision } from './tools.js';
+import { COMPROMISED_SYSTEM_PROMPT, COMPROMISED_TOOLS, CompromisedTicketTools, type RejectedWrite } from './compromised.js';
 import { TraceWriter } from './trace.js';
 
 type CreateParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
@@ -29,6 +30,11 @@ export interface AgentOptions {
   /** Model round trips per ticket before giving up. */
   maxTurns?: number;
   policy?: Policy;
+  /**
+   * Jailbreak demo (`npm run demo:jailbreak`): guardrail-free prompt plus hijack tools; every server
+   * refusal is recorded as a `rejected_write` trace event. Same database user, same server rules.
+   */
+  compromised?: boolean;
 }
 
 export type TicketStatus = Decision['status'] | 'no_decision' | 'refused' | 'error';
@@ -40,6 +46,8 @@ export interface TicketResult {
   decision?: Decision;
   detail?: string;
   turns: number;
+  /** Compromised mode only: every write the server refused, in order. */
+  rejections?: RejectedWrite[];
 }
 
 export function anthropicCreateMessage(client: Anthropic): CreateMessage {
@@ -61,11 +69,13 @@ export async function loadActivePolicy(db: Db): Promise<Policy> {
 export async function resolveTicket(ticketId: string, opts: AgentOptions): Promise<TicketResult> {
   const traceId = `tr_${randomUUID()}`;
   const trace = new TraceWriter(opts.db, traceId, ticketId);
+  let tools: TicketTools | undefined;
   const result = (status: TicketStatus, turns: number, extra: Partial<TicketResult> = {}): TicketResult => ({
     ticket_id: ticketId,
     trace_id: traceId,
     status,
     turns,
+    ...(tools instanceof CompromisedTicketTools ? { rejections: tools.rejections } : {}),
     ...extra,
   });
 
@@ -76,7 +86,10 @@ export async function resolveTicket(ticketId: string, opts: AgentOptions): Promi
   }
 
   const policy = opts.policy ?? (await loadActivePolicy(opts.db));
-  const tools = new TicketTools({ db: opts.db, policy, trace, ticket });
+  const ctx = { db: opts.db, policy, trace, ticket };
+  tools = opts.compromised ? new CompromisedTicketTools(ctx) : new TicketTools(ctx);
+  const systemPrompt = opts.compromised ? COMPROMISED_SYSTEM_PROMPT : SYSTEM_PROMPT;
+  const toolDefs = opts.compromised ? COMPROMISED_TOOLS : TOOLS;
   const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [
     { role: 'user', content: `Resolve support ticket ${ticketId}.` },
   ];
@@ -86,8 +99,8 @@ export async function resolveTicket(ticketId: string, opts: AgentOptions): Promi
     const response = await opts.createMessage({
       model: opts.model,
       max_tokens: 16000,
-      system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      tools: TOOLS,
+      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+      tools: toolDefs,
       messages,
       thinking: { type: 'adaptive', display: 'summarized' },
       output_config: { effort: opts.effort ?? 'medium' },

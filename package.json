@@ -33,6 +33,8 @@
     "seed": "tsx scripts/seed.ts",
     "reset": "tsx scripts/reset.ts",
     "redteam": "tsx scripts/redteam.ts",
+    "demo:jailbreak": "tsx scripts/jailbreak.ts",
+    "jailbreak": "tsx scripts/jailbreak.ts",
     "demo:tunnel": "tsx scripts/tunnel.ts"
   },
   "dependencies": {

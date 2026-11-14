@@ -223,6 +223,11 @@ function Ticket({ ticket, me, onOpen }: { ticket: TicketCard; me: string | null;
           {STAGE_LABEL[ticket.stage]}
         </span>
       </div>
+      {ticket.blocked_writes?.length ? (
+        <p className="injection" data-testid="injection-blocked" title={ticket.blocked_writes.map((b) => `${b.tool}: code ${b.code}`).join('\n')}>
+          {`Injection attempt blocked · ${ticket.blocked_writes.length} write${ticket.blocked_writes.length === 1 ? '' : 's'} refused by MongoDB (code ${[...new Set(ticket.blocked_writes.map((b) => b.code))].join(', ')})`}
+        </p>
+      ) : null}
       <p className="subject">{ticket.subject}</p>
       <div className="meta">
         {ticket.amount_cents !== undefined && <span className="amount">{dollars(ticket.amount_cents)}</span>}
