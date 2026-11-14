@@ -12,6 +12,7 @@ import {
   type TimelineEvent,
   type TimelineIntegrity,
 } from './api.js';
+import { RedTeamPanel } from './RedTeamPanel.js';
 
 const COLUMNS: Array<{ id: string; title: string; hint: string; stages: Stage[] }> = [
   { id: 'intake', title: 'Intake', hint: 'Waiting for or being worked by the agent', stages: ['open', 'working'] },
@@ -145,6 +146,7 @@ export function App() {
           );
         })}
       </main>
+      {me && <RedTeamPanel />}
         </>
       )}
 
