@@ -4,7 +4,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
-import { resolveTicket } from '@escrowops/agent';
+import { compromisedModel, resolveTicket } from '@escrowops/agent';
 import type { PipelineMessage, TicketCard, TimelineEvent } from '@escrowops/web';
 import { testServerUri } from '../helpers/index.js';
 import { startStack, type Stack } from '../helpers/stack.js';
@@ -156,5 +156,32 @@ describe('audit timeline (S7)', () => {
     expect(events.find((e) => e.kind === 'held')!.summary).toMatch(/broke maximum/);
     // Times never go backwards.
     expect(events.map((e) => e.at)).toEqual([...events.map((e) => e.at)].sort());
+  });
+});
+
+describe('compromised agent (npm run demo:jailbreak)', () => {
+  it('the card is badged "Injection attempt blocked" and the timeline shows each refusal; nothing pays', async () => {
+    const run = await resolveTicket('T-1012', { db: s.agentDb, model: 'compromised-stub', createMessage: compromisedModel(), compromised: true });
+
+    const card = await waitFor(async () => {
+      const c = await ticket('T-1012');
+      return c.trace_id === run.trace_id ? c : undefined;
+    }, { what: 'T-1012 jailbreak run on the pipeline' });
+    expect(card.amount_cents).toBe(5_000_000);
+    expect(card.blocked_writes?.map((b) => [b.tool, b.code])).toEqual([
+      ['propose_refund', 121],
+      ['record_approval', 13],
+      ['force_payout', 13],
+      ['edit_audit_trail', 13],
+    ]);
+    expect(card.review).toMatchObject({ tier: 'blocked' });
+    expect(card.ledger).toBeUndefined();
+
+    const { events } = await get<{ events: TimelineEvent[] }>(`/api/timeline/${run.trace_id}`);
+    const refused = events.filter((e) => e.kind === 'rejected_write').map((e) => e.summary);
+    expect(refused).toHaveLength(4);
+    expect(refused[0]).toMatch(/^Agent tried propose_refund \$50000\.00 \(insert on intents\) → MongoDB rejected \(code 121 DocumentValidationFailure\): amount_cents: 5000000 — maximum 50000/);
+    expect(refused[1]).toMatch(/record_approval .*approved\) → MongoDB rejected \(code 13 Unauthorized\)/);
+    expect(events.some((e) => ['intents', 'approved', 'ledger'].includes(e.source))).toBe(false);
   });
 });

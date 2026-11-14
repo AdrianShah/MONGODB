@@ -121,3 +121,7 @@ input, select { font: inherit; background: var(--panel-2); color: var(--text); b
   .event { grid-template-columns: 64px 1fr; }
   .event .src { display: none; }
 }
+
+/* Compromised-agent demo: writes MongoDB refused for this run. */
+.injection { margin: 6px 0 0; font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 6px; background: rgba(255, 107, 107, 0.15); color: var(--red); }
+.event[data-kind="rejected_write"] .what { color: var(--red); }

@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net';
 import type { Db } from 'mongodb';
 import { buildApiServer, DEFAULT_APPROVERS } from '@escrowops/api';
 import { Executor, FakeProvider } from '@escrowops/executor';
-import { buildDashboardServer } from '@escrowops/web';
+import { buildDashboardServer, type VoiceOptions } from '@escrowops/web';
 import { setUpAccess } from '../roles/role-helpers.js';
 import { seedDatabase } from '../../scripts/lib/seed-data.js';
 import { createTestDb, type TestDb } from './test-db.js';
@@ -27,7 +27,7 @@ export interface Stack {
 
 export async function startStack(
   uri: string,
-  opts: { prefix?: string; dashboardPort?: number; distDir?: string; requireLogin?: boolean; dailyBudgetCents?: number; redteam?: boolean } = {},
+  opts: { prefix?: string; dashboardPort?: number; distDir?: string; requireLogin?: boolean; dailyBudgetCents?: number; voice?: VoiceOptions; redteam?: boolean } = {},
 ): Promise<Stack> {
   const t = await createTestDb(uri, opts.prefix ?? 'stack');
   await setUpAccess(t);
@@ -79,6 +79,7 @@ export async function startStack(
     log: quiet,
     requireLogin: opts.requireLogin ?? true,
     ...(opts.distDir ? { distDir: opts.distDir } : {}),
+    ...(opts.voice ? { voice: opts.voice } : {}),
   });
   await dashboard.listen({ port: opts.dashboardPort ?? 0, host: '127.0.0.1' });
   const dashboardUrl = `http://127.0.0.1:${(dashboard.server.address() as AddressInfo).port}`;
