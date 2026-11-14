@@ -22,7 +22,9 @@ For UI work with hot reload, run `npm run dashboard` and `npm run web:dev` (Vite
 - **Review cards (S5, S8).** Amount, tier, the agent's reason and evidence, the validator rule the proposal broke, and "1 of 2" progress. Approve and Reject are disabled until you sign in, and after you have decided.
 - **Audit timeline (S7).** `timelinePipeline()` in `src/timeline.ts` is a single aggregation: `agent_traces` `$unionWith` `intents`, `review_queue` (held, and its decision), `approvals` (joined to their review by `$lookup`), `approved`, and `ledger` (pending, then the outcome), sorted by time.
 
+- **Voice (`src/voice.ts`, `ui/voice.tsx`).** "Listen" on held review cards and "Narrate audit trail" on the timeline. Deterministic scripts from the card and the timeline aggregation; audio from ElevenLabs (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, optional `ELEVENLABS_MODEL`) fetched by this server, cached per script, with the browser's `speechSynthesis` as the fallback. Approver session required; read-only; never approves.
+
 ## Tests
 
-- `tests/web/` (in `npm test`): pipeline stages, live push, forwarded login and approve, and I16 (the full timeline of a $5,000 refund).
+- `tests/web/` (in `npm test`): pipeline stages, live push, forwarded login and approve, I16 (the full timeline of a $5,000 refund), and voice (`voice.test.ts`, ElevenLabs mocked).
 - `tests/e2e/` (`npm run test:e2e`, Playwright): U1 to U9 with two browser contexts, one per approver, against the full stack. Global setup builds the UI and starts everything in one process (in-memory MongoDB unless `MONGODB_URI` is set). Needs `npx playwright install chromium` once.
