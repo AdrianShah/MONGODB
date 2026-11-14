@@ -12,6 +12,8 @@ import {
   type TimelineEvent,
   type TimelineIntegrity,
 } from './api.js';
+import { FreezeBanner, FreezeControl } from './KillSwitch.js';
+import type { FreezeSummary } from '../src/types.js';
 
 const COLUMNS: Array<{ id: string; title: string; hint: string; stages: Stage[] }> = [
   { id: 'intake', title: 'Intake', hint: 'Waiting for or being worked by the agent', stages: ['open', 'working'] },
@@ -47,6 +49,7 @@ const TIER_LABEL: Record<string, string> = {
 export function App() {
   const [tickets, setTickets] = useState<TicketCard[]>([]);
   const [budget, setBudget] = useState<BudgetSummary | null>(null);
+  const [freeze, setFreeze] = useState<FreezeSummary | null>(null);
   const [feed, setFeed] = useState<FeedStatus>('connecting');
   const [me, setMe] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
@@ -65,11 +68,13 @@ export function App() {
     if (!checked || locked) {
       setTickets([]);
       setBudget(null);
+      setFreeze(null);
       return;
     }
     return subscribePipeline((m) => {
       setTickets(m.tickets);
       setBudget(m.budget);
+      setFreeze(m.freeze ?? null);
     }, setFeed);
   }, [checked, locked]);
 
@@ -103,9 +108,11 @@ export function App() {
               {feed === 'live' ? 'Live' : feed === 'connecting' ? 'Connecting' : 'Reconnecting'}
             </span>
           )}
+          {!locked && <FreezeControl freeze={freeze} me={me} />}
           <SignIn me={me} onChange={setMe} />
         </div>
       </header>
+      {!locked && <FreezeBanner freeze={freeze} />}
 
       {locked ? (
         <main className="locked" data-testid="locked">

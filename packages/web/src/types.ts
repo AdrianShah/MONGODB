@@ -44,7 +44,7 @@ export interface TicketCard {
 
 export interface TimelineEvent {
   at: string;
-  source: 'agent_traces' | 'intents' | 'review_queue' | 'approvals' | 'approved' | 'ledger';
+  source: 'agent_traces' | 'intents' | 'review_queue' | 'approvals' | 'approved' | 'ledger' | 'kill_switch';
   /** e.g. tool_call, tool_result, reasoning, decision, proposed, held, approve, reject, promoted, pending, succeeded. */
   kind: string;
   summary: string;
@@ -57,4 +57,21 @@ export interface BudgetSummary {
   spent_cents: number;
 }
 
-export type PipelineMessage = { type: 'pipeline'; tickets: TicketCard[]; budget: BudgetSummary | null };
+/** Kill switch state, from the latest `kill_switch` record (null: never used). */
+export interface FreezeSummary {
+  frozen: boolean;
+  action: 'freeze' | 'unfreeze';
+  actor: string;
+  reason: string;
+  at: string;
+  voided: Array<{ ticket_id: string; amount_cents: number; source_id: string }>;
+  in_flight: Array<{ ticket_id: string; amount_cents: number; source_id: string }>;
+}
+
+export type PipelineMessage = {
+  type: 'pipeline';
+  tickets: TicketCard[];
+  budget: BudgetSummary | null;
+  /** Optional so older servers and other branches stay compatible. */
+  freeze?: FreezeSummary | null;
+};
