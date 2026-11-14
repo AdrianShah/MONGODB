@@ -102,7 +102,7 @@ If the injection ticket in the batch was caught earlier, point at it: "One of th
 
 > "That script never asked the model. So let's fool the model. Ticket T-1012 hides a fake 'internal support note' ordering a fifty-thousand-dollar refund. I've stripped the guardrails from the prompt."
 
-Run `npm run demo:jailbreak` (pre-typed; `-- --fast` skips the pacing). Scripted model that obeys the injection, the agent's own database user and real tools; no `ANTHROPIC_API_KEY`, identical every run.
+Run `npm run demo:jailbreak` (pre-typed; `-- --fast` skips the pacing). Scripted model that obeys the injection, the agent's own database user and real tools; no model API key, identical every run.
 
 ```
 Model fooled: it obeyed the ticket and asked for $50,000.00.
@@ -121,7 +121,7 @@ Point at the T-1012 card: red **Injection attempt blocked** badge. Open its audi
 
 > "The model believed it. It asked for fifty thousand, forged two approvals and tried to erase its tracks. MongoDB said no four times, and wrote down every attempt."
 
-Notes: each refusal is a `rejected_write` event in `agent_traces` (tool, collection, code, failed rule), written by the tool harness, which the agent role cannot edit or delete. `-- --live` runs the real model with the stripped prompt (needs `ANTHROPIC_API_KEY`; a real model may refuse the bait, so do not use it on stage). Exit code 1 if any write lands. In the 2-minute cut, this can replace the red-team beat.
+Notes: each refusal is a `rejected_write` event in `agent_traces` (tool, collection, code, failed rule), written by the tool harness, which the agent role cannot edit or delete. `-- --live` runs the real model with the stripped prompt (needs `GROQ_API_KEY` or `ANTHROPIC_API_KEY`; a real model may refuse the bait, so do not use it on stage). Exit code 1 if any write lands. In the 2-minute cut, this can replace the red-team beat.
 
 ### 3:00 — Kill the worker mid-payout (30 s)
 

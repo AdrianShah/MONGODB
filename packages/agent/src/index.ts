@@ -9,7 +9,9 @@ export {
   type TicketStatus,
 } from './agent.js';
 export { runBatch, statusLine } from './batch.js';
-export { loadAgentSettings, InvalidAgentEnvError, type AgentSettings } from './config.js';
+export { loadAgentSettings, InvalidAgentEnvError, type AgentSettings, type AgentProvider } from './config.js';
+export { liveCreateMessage, hasLiveModelKey } from './provider.js';
+export { groqCreateMessage, toChatMessages, toChatTools, fromChatResponse, GroqError, GROQ_DEFAULT_MODEL, type GroqOptions } from './groq.js';
 export { SYSTEM_PROMPT } from './prompt.js';
 export { TOOLS, TicketTools, ToolError, AgentFrozenError, isUnauthorized, isFrozenRefusal, describeViolations, failedRules, idempotencyKey, type Decision, type ToolContext } from './tools.js';
 export { TraceWriter } from './trace.js';

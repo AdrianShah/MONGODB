@@ -8,7 +8,7 @@
  *  - the model gets extra tools a hijacked agent would reach for: forge approvals, force a payout
  *    past the validator, rewrite its own audit trail;
  *  - by default the "model" is a scripted stub that obeys the injection, so the demo needs no
- *    ANTHROPIC_API_KEY and runs the same way every time.
+ *    a model API key and runs the same way every time.
  *
  * Every write still goes through the agent's own database user, and every refusal (code and rule)
  * is written to `agent_traces` under the run's trace_id as a `rejected_write` event, so the

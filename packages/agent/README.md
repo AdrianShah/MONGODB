@@ -16,7 +16,7 @@ T-1001   proposed $89.00 -> intents (auto, pays out)
 T-1011   proposed $5000.00 -> review_queue (human_required; validator: maximum)
 ```
 
-Claude credentials come from `ANTHROPIC_API_KEY` (or an `ant auth login` profile). Settings: `AGENT_MODEL` (default `claude-sonnet-5-5`, per the PRD), `AGENT_EFFORT` (default `medium`), `AGENT_CONCURRENCY` (default 4), `AGENT_FALLBACKS=off` to disable the server-side refusal fallback, which is on by default.
+Model provider: with `GROQ_API_KEY` set (free tier works) the agent runs on Groq through an OpenAI-compatible adapter (`src/groq.ts`) that maps the tool-use loop onto chat completions; otherwise it uses Claude via `ANTHROPIC_API_KEY` (or an `ant auth login` profile). `AGENT_PROVIDER=groq|anthropic` forces one. Settings: `AGENT_MODEL` (default `openai/gpt-oss-120b` on Groq, `claude-sonnet-5-5` on Anthropic), `AGENT_EFFORT` (default `medium`; on Groq it maps to gpt-oss `reasoning_effort`), `AGENT_CONCURRENCY` (default 1 on Groq to stay within free-tier tokens per minute, 4 on Anthropic), `GROQ_MAX_TOKENS` (default 2048), `AGENT_FALLBACKS=off` to disable the Anthropic server-side refusal fallback. Groq 429s are retried after the server's `retry-after`, and a malformed tool call (`tool_use_failed`) is resampled.
 
 ## How a ticket is worked
 

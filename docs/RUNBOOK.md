@@ -11,7 +11,7 @@ npm run setup               # collections, validators, indexes, roles, users
 npm run web:build           # dashboard UI
 ```
 
-For the live agent, set `ANTHROPIC_API_KEY`. For real Stripe refunds, set `PAYMENTS=stripe` and `STRIPE_SECRET_KEY=sk_test_...`; `npm run seed` then creates a fresh test payment for every ticket's order.
+For the live agent, set `GROQ_API_KEY` (free at https://console.groq.com/keys; the agent then uses Groq, default model `openai/gpt-oss-120b`, one ticket at a time, waiting out free-tier rate limits) or `ANTHROPIC_API_KEY`. For real Stripe refunds, set `PAYMENTS=stripe` and `STRIPE_SECRET_KEY=sk_test_...`; `npm run seed` then creates a fresh test payment for every ticket's order.
 
 ## Before going on (about 2 minutes)
 
@@ -75,4 +75,4 @@ This runs the whole script with real processes (its own fake provider, approval 
 
 Each run also checks the daily budget (it shows exactly the 9 auto refunds) and runs `npm run audit:verify`.
 
-Also before each rehearsal (TEST_PLAN section 8): `npm run test:chaos` and `npm run test:e2e`. After any prompt or tool change: `npm run test:evals` (needs `ANTHROPIC_API_KEY`, costs tokens: 20 tickets x 3 runs; without a key it dry-runs the labels to check the harness).
+Also before each rehearsal (TEST_PLAN section 8): `npm run test:chaos` and `npm run test:e2e`. After any prompt or tool change: `npm run test:evals` (needs `GROQ_API_KEY` or `ANTHROPIC_API_KEY`, costs tokens: 20 tickets x 3 runs; without a key it dry-runs the labels to check the harness).
