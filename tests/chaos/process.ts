@@ -1,7 +1,9 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { fileURLToPath } from "node:url";
+/** Runs the real executor entry point as a child process, so it can be SIGKILLed. */
+import { spawn, type ChildProcess } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const PKG_ROOT = fileURLToPath(new URL("../..", import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
+const MAIN = 'packages/executor/src/main.ts';
 
 export interface ExecutorProcess {
   child: ChildProcess;
@@ -13,23 +15,23 @@ export interface ExecutorProcess {
 }
 
 export function spawnExecutor(env: Record<string, string | undefined>): ExecutorProcess {
-  const child = spawn(process.execPath, ["--import", "tsx", "src/main.ts"], {
-    cwd: PKG_ROOT,
+  const child = spawn(process.execPath, ['--import', 'tsx', MAIN], {
+    cwd: REPO_ROOT,
     env: { ...process.env, CRASH_AT: undefined, CRASH_ON_HIT: undefined, ...env },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
-  let out = "";
-  let onReady: () => void;
+  let out = '';
+  let onReady!: () => void;
   const readySeen = new Promise<void>((r) => (onReady = r));
   const collect = (chunk: Buffer) => {
     out += chunk.toString();
     if (/\[executor\] ready/.test(out)) onReady();
   };
-  child.stdout!.on("data", collect);
-  child.stderr!.on("data", collect);
+  child.stdout!.on('data', collect);
+  child.stderr!.on('data', collect);
 
   const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
-    child.on("exit", (code, signal) => resolve({ code, signal })),
+    child.on('exit', (code, signal) => resolve({ code, signal })),
   );
   const ready = Promise.race([
     readySeen,
@@ -46,8 +48,8 @@ export function spawnExecutor(env: Record<string, string | undefined>): Executor
     output: () => out,
     async stop() {
       if (child.exitCode === null && child.signalCode === null) {
-        child.kill("SIGTERM");
-        const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
+        child.kill('SIGTERM');
+        const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
         await exited;
         clearTimeout(timer);
       }
@@ -62,7 +64,7 @@ export async function expectKilled(p: ExecutorProcess, timeoutMs = 15_000): Prom
       setTimeout(() => reject(new Error(`executor did not crash within ${timeoutMs}ms\n${p.output()}`)), timeoutMs),
     ),
   ]);
-  if (result.signal !== "SIGKILL") {
+  if (result.signal !== 'SIGKILL') {
     throw new Error(`expected SIGKILL, got code=${result.code} signal=${result.signal}\n${p.output()}`);
   }
 }

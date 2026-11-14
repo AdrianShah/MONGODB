@@ -11,7 +11,10 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:chaos": "vitest run --config vitest.chaos.config.ts",
     "typecheck": "tsc --noEmit",
+    "executor": "tsx packages/executor/src/main.ts",
+    "fake-provider": "tsx packages/executor/src/providers/fake-http-server.ts",
     "db": "tsx scripts/dev-db.ts",
     "spike": "tsx scripts/spike.ts",
     "setup": "tsx scripts/setup.ts",
@@ -20,6 +23,7 @@
     "redteam": "tsx scripts/redteam.ts"
   },
   "dependencies": {
+    "@escrowops/executor": "*",
     "@escrowops/shared": "*",
     "dotenv": "^18.0.10",
     "mongodb": "^7.9.0"

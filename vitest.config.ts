@@ -3,6 +3,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
+    // Chaos tests spawn and SIGKILL real processes; run them with `npm run test:chaos`.
+    exclude: ['tests/chaos/**', '**/node_modules/**'],
     // One MongoDB server per run, shared through inject('mongoUri').
     globalSetup: ['tests/helpers/global-setup.ts'],
     // The first run downloads a mongod binary; replica set election and
