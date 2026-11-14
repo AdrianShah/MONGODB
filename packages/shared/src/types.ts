@@ -86,7 +86,8 @@ export interface AgentTraceDoc {
   ticket_id: string;
   /** Order of events within one trace, starting at 0. */
   seq: number;
-  kind: 'tool_call' | 'tool_result' | 'reasoning' | 'decision' | 'error';
+  /** `rejected_write`: the server refused a write the agent attempted (code, rule), recorded by the tool harness. */
+  kind: 'tool_call' | 'tool_result' | 'reasoning' | 'decision' | 'error' | 'rejected_write';
   tool?: string;
   input?: unknown;
   output?: unknown;
