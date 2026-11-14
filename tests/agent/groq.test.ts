@@ -146,6 +146,22 @@ describe('transport', () => {
     expect(waits).toEqual([2250, 250]);
   });
 
+  it('retries a network failure or stalled request with backoff, and passes a timeout signal', async () => {
+    const waits: number[] = [];
+    const signals: unknown[] = [];
+    let n = 0;
+    const fetchFn = (async (_url: string, init: RequestInit) => {
+      signals.push(init.signal);
+      if (n++ < 2) throw new TypeError('fetch failed');
+      return new Response(JSON.stringify(completion({ content: 'back' })), { status: 200 });
+    }) as unknown as typeof fetch;
+    const create = groqCreateMessage({ apiKey: 'k', fetch: fetchFn, sleep: async (ms) => void waits.push(ms), log: () => {} });
+    const m = await create(params as never);
+    expect(m.content).toMatchObject([{ text: 'back' }]);
+    expect(waits).toEqual([1000, 2000]);
+    expect(signals.every((s) => s instanceof AbortSignal)).toBe(true);
+  });
+
   it('fails without retrying on a bad key', async () => {
     const g = fakeGroq([{ status: 401, text: '{"error":{"message":"Invalid API Key"}}' }]);
     const create = groqCreateMessage({ apiKey: 'k', fetch: g.fetchFn, log: () => {} });

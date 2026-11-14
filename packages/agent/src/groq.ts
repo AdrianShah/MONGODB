@@ -9,8 +9,9 @@
  *   GROQ_MAX_TOKENS     completion cap per call (default 2048; keeps free-tier TPM usage low)
  *   GROQ_BASE_URL       default "https://api.groq.com/openai/v1"
  *
- * Rate limits (HTTP 429) are retried after the `retry-after` the server sends, and a
- * malformed tool call from the model (400 `tool_use_failed`) is retried as a new sample.
+ * Rate limits (HTTP 429) are retried after the `retry-after` the server sends, a
+ * malformed tool call from the model (400 `tool_use_failed`) is retried as a new sample,
+ * and a network failure or a request stalled past 60s is aborted and retried with backoff.
  */
 import type Anthropic from '@anthropic-ai/sdk';
 import type { CreateMessage, Effort } from './agent.js';
@@ -26,8 +27,10 @@ export interface GroqOptions {
   baseUrl?: string;
   /** Completion token cap per call (Groq's free tier counts it against tokens per minute). */
   maxTokens?: number;
-  /** Retries for 429 / 5xx / tool_use_failed before giving up. */
+  /** Retries for 429 / 5xx / tool_use_failed / network errors before giving up. */
   maxRetries?: number;
+  /** Per-request timeout; a stalled request is aborted and retried (default 60s). */
+  timeoutMs?: number;
   /** Injected for tests. */
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
@@ -169,6 +172,7 @@ export function groqCreateMessage(opts: GroqOptions): CreateMessage {
   const base = (opts.baseUrl ?? GROQ_DEFAULT_BASE_URL).replace(/\/$/, '');
   const maxRetries = opts.maxRetries ?? 6;
   const log = opts.log ?? ((line: string) => console.warn(line));
+  const timeoutMs = opts.timeoutMs ?? 60_000;
 
   return async (params) => {
     const effort = (params as { output_config?: { effort?: Effort } }).output_config?.effort;
@@ -184,11 +188,23 @@ export function groqCreateMessage(opts: GroqOptions): CreateMessage {
     };
 
     for (let attempt = 0; ; attempt++) {
-      const res = await doFetch(`${base}/chat/completions`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${opts.apiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      let res: Response;
+      try {
+        res = await doFetch(`${base}/chat/completions`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${opts.apiKey}`, 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+          // A stalled connection must not hang the batch: abort and retry it.
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (err) {
+        // Network failure or timeout (fetch throws rather than returning a status).
+        if (attempt >= maxRetries) throw new GroqError(0, `Groq request failed after ${attempt + 1} attempts: ${(err as Error).message}`);
+        const wait = Math.min(30_000, 1000 * 2 ** attempt);
+        log(`[agent] groq network error (${(err as Error).name}: ${(err as Error).message}); retrying in ${(wait / 1000).toFixed(1)}s`);
+        await sleep(wait);
+        continue;
+      }
       if (res.ok) return fromChatResponse((await res.json()) as ChatResponse, params.model);
 
       const text = await res.text();
