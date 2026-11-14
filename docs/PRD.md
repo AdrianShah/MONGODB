@@ -177,6 +177,35 @@ The executor reserves budget with an atomic `$inc`. If the increment would excee
 | `approved.review_id` | A review being promoted twice |
 | `ledger.source_id` | Two payouts for one intent or approval |
 
+### Orders
+
+The executor issues refunds against `orders.payment_id` (a Stripe PaymentIntent or charge ID, or a `pi_fake_...` ID with the fake provider). It reads `amount_cents` and `refunded_cents` for the refundable check and never writes to `orders`; refunds made through EscrowOps are counted from the ledger.
+
+### Ledger entry
+
+One document per source document, written only by the executor. This shape is the contract the dashboard's audit timeline reads; `LedgerDoc` in `@escrowops/shared` must match it.
+
+| Field | Meaning |
+|---|---|
+| `source_id` | `"<collection>:<source _id as hex>"`, for example `intents:66f0...`. Unique. Also the idempotency key sent to the payment provider. |
+| `source_collection` | `intents` or `approved` |
+| `source_doc_id` | The source document's `_id` |
+| `trace_id`, `ticket_id`, `order_id`, `customer_id`, `amount_cents`, `currency` | Copied from the source document |
+| `status` | `pending`, then `succeeded` or `failed` |
+| `checks_passed` | Set once the pre-payout checks pass. A `pending` entry with this set may already have been paid, so recovery retries it and never re-checks. |
+| `owner`, `attempts` | Which executor instance holds it, and how many provider calls were made |
+| `provider`, `provider_refund_id`, `failure_reason` | Outcome |
+| `created_at`, `updated_at` | Timestamps |
+
+### Two idempotency keys, two jobs
+
+| Key | Where | Job |
+|---|---|---|
+| `idempotency_key` = hash of ticket ID and order ID | On every proposal (`intents`, `review_queue`, `approved`) | Stops the agent proposing the same ticket twice, through the unique indexes |
+| `source_id` | Ledger, and sent to the provider | Stops one source document being paid twice, across retries and crashes |
+
+They are separate on purpose. The provider key must be stable across retries of one source document but new after `npm run reset`, otherwise a second rehearsal replays the first run's refunds instead of creating new ones. A source document's `_id` has exactly that lifetime.
+
 ### Roles
 
 | Role | Privileges |
@@ -210,12 +239,13 @@ Priority: **P0** must ship for the demo, **P1** should ship, **P2** stretch.
 | ID | Requirement | Pri |
 |---|---|---|
 | E1 | Watches inserts on `intents` and `approved` through Change Streams. | P0 |
-| E2 | Two-phase payout: insert `ledger` entry as `pending`, call Stripe with the same idempotency key, update the entry to `succeeded` with the Stripe refund ID. | P0 |
-| E3 | Saves the resume token after each event. On startup, resumes from the token and reconciles any `pending` ledger entries by repeating the Stripe call with the same key. | P0 |
+| E2 | Two-phase payout: insert `ledger` entry as `pending`, call the provider with the entry's `source_id` as the idempotency key, update the entry to `succeeded` with the refund ID. | P0 |
+| E3 | Saves the resume token after each event. On startup, resumes from the token and reconciles any `pending` ledger entries by repeating the provider call with the same key. Each entry is reconciled independently: one that throws is logged and skipped, and never blocks the others or stops the process from starting. | P0 |
 | E4 | Startup sweep: any document in `intents` or `approved` with no ledger entry is processed. Covers a lost or expired resume token. | P0 |
-| E5 | Pre-payout checks that a validator cannot do: refund does not exceed the order's remaining refundable amount; order belongs to the customer. Failures are written to the ledger as `failed` with a reason. | P0 |
+| E5 | Pre-payout checks that a validator cannot do: the order exists, belongs to the customer, and has a `payment_id`; the refund does not exceed the order's remaining refundable amount; no other `pending` or `succeeded` ledger entry exists for the same `ticket_id` (one payout per ticket). Failures are written to the ledger as `failed` with a reason, and the provider is not called. | P0 |
 | E6 | Daily auto-refund budget enforced through the `budgets` validator. When exhausted, auto refunds are diverted to review. | P1 |
-| E7 | `PaymentProvider` interface with `StripeProvider` (test mode) and `FakeProvider` (in-memory, used by tests and as the demo fallback). | P0 |
+| E7 | `PaymentProvider` interface with `StripeProvider` (test mode only; live keys refused), `FakeProvider` (in memory, for tests), and the fake behind HTTP (survives an executor kill; used by chaos tests and as the demo fallback). | P0 |
+| E9 | Connects as the `executor` database user through the shared config (`MONGODB_URI`, `EXECUTOR_DB_USER`, `EXECUTOR_DB_PASSWORD`), and imports document types from `@escrowops/shared`. | P0 |
 | E8 | `CRASH_AT=<1..4>` environment variable kills the process with SIGKILL at a named point, for chaos tests and the demo. | P0 |
 
 ### Approval service and dashboard
@@ -237,9 +267,9 @@ Priority: **P0** must ship for the demo, **P1** should ship, **P2** stretch.
 | ID | Requirement | Pri |
 |---|---|---|
 | T1 | `npm run setup`: creates collections, validators, indexes, roles, users. Safe to re-run. | P0 |
-| T2 | `npm run seed`: customers, orders with real Stripe test payments, 12 tickets (8 small, 2 mid, 1 large, 1 containing a prompt injection). | P0 |
+| T2 | `npm run seed`: customers, orders, 12 tickets (8 small, 2 mid, 1 large, 1 containing a prompt injection). Orders carry fake `payment_id`s by default. With `PAYMENTS=stripe` it creates a fresh Stripe test payment for each ticket order and stores the real ID. | P0 |
 | T3 | `npm run redteam`: connects as the agent user and attempts five attacks, printing each server error. | P0 |
-| T4 | `npm run reset`: clears run data so the demo can be repeated in seconds. | P0 |
+| T4 | `npm run reset`: clears run data and re-seeds so the demo can be repeated in seconds. A repeat run must create new refunds, not replay old ones: with `PAYMENTS=stripe` the re-seed makes fresh test payments, and when `FAKE_PROVIDER_URL` is set the fake provider's log is cleared. | P0 |
 | T5 | `npm run apply-policy`: regenerates validators from the active `policies` document. | P1 |
 
 ## 9. Non-functional requirements

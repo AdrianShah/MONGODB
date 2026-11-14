@@ -23,7 +23,7 @@ Each part of that claim is enforced by the database (schema validators, collecti
 |---|---|
 | 0. Spike | Done locally. Atlas-specific checks still open (see docs/SPIKE.md). |
 | 1. Foundation | Done: validators, indexes, roles, setup, seed, reset, red team. |
-| 2. Executor | Not started |
+| 2. Executor | Built on `feat/executor` and reviewed. Integration checklist in [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md). |
 | 3. Agent | Not started |
 | 4. Approval service | Not started |
 | 5. Dashboard | Not started |

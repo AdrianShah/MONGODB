@@ -39,10 +39,39 @@ Cross-lane dependencies: B and C call A's `applySchema()`. Wave 0 ships a workin
 
 Run the full suite, route failures back to the owning agent, check the result against the Phase 1 exit criteria (TEST_PLAN sections 1 and 2 pass), then write the README setup section.
 
+## Phase 2 — executor integration
+
+The executor lives on `feat/executor` (owner: Hossein). It was reviewed against the foundation by merging the two in a scratch copy: the merge is clean, 21 of 21 unit tests and 9 of 9 chaos tests pass (50 randomized crash runs, zero duplicate or lost payouts), and it runs correctly as the real `executor_role` user against the real validators and seed data.
+
+**Merge order:** `feat/phase-0-1-foundation` merges to `main` first. `feat/executor` then rebases onto `main`.
+
+The plan changed in four places as a result of the review (PRD section 7 "Orders", "Ledger entry", "Two idempotency keys"; requirements E2, E3, E5, E7, E9, T2, T4). The checklist below brings the code in line. All of it is in the executor's lane unless marked.
+
+| # | Change | Where | Plan ref |
+|---|---|---|---|
+| 1 | Read the order's `payment_id`, not `payment_ref`. Refuse the payout when it is missing. | `packages/executor` | E5, I12a |
+| 2 | Send the ledger entry's `source_id` to the provider as the idempotency key, instead of the proposal's `idempotency_key`. | `packages/executor` | E2, I12c, O2a |
+| 3 | Refuse a payout when another `pending` or `succeeded` ledger entry exists for the same `ticket_id`. | `packages/executor` | E5, I12b |
+| 4 | Reconcile each pending entry in its own try/catch, so one bad entry cannot block the rest or crash startup. | `packages/executor` | E3, I12d |
+| 5 | Wait before reopening a Change Stream that ended without an error, so a dropped collection cannot cause a tight loop. | `packages/executor` | E1 |
+| 6 | Replace the local document types with imports from `@escrowops/shared`, and update `LedgerDoc` there to the shape in PRD section 7. | `packages/executor`, `packages/shared/src/types.ts` | E9 |
+| 7 | Connect with `connectAs('executor')` from the shared config instead of `EXECUTOR_MONGODB_URI`. | `packages/executor` | E9 |
+| 8 | Move the tests onto the shared harness (`tests/helpers`), so they use `applySchema`, `applyRoles` and the in-memory replica set instead of a private fixture and Docker. Add the executor's unit tests to the root Vitest `include`; keep chaos as `npm run test:chaos`. | `packages/executor`, root `vitest.config.ts`, root `package.json` | O2b |
+| 9 | `npm run seed` with `PAYMENTS=stripe` creates a fresh test payment per ticket order; `npm run reset` clears the fake provider when `FAKE_PROVIDER_URL` is set. | `scripts/lib/seed-data.ts`, `scripts/reset.ts` | T2, T4 |
+| 10 | Run `npm install` at the root after rebasing and commit the lockfile (the package adds `stripe`). | root | — |
+| 11 | Run the Stripe provider once against a test key and note the result; it has never been exercised. | manual | TEST_PLAN section 4 |
+
+Items 6, 8, 9 and 10 touch files outside `packages/executor`. They are assigned to the executor's owner for this phase so one person makes each change; nobody else should edit those files until `feat/executor` merges.
+
+Not in this phase: the daily budget (E6). When it is built, `executor_role` needs `insert` on `review_queue`.
+
 ## Decisions
 
 | Decision | Why |
 |---|---|
+| The provider idempotency key is the ledger `source_id`, not the proposal's `idempotency_key` | The proposal key is the same on every run of a ticket, so after a reset the provider replayed the previous run's refund. A source document's `_id` is stable across retries and new after a reset. |
+| One payout per ticket is checked by the executor | With separate keys, the provider no longer rejects a second payout for the same ticket, so the executor must |
+| `orders.payment_id` and the executor's ledger shape are canonical | Seed data and shared types already use `payment_id`; the ledger shape is the one in working, tested code |
 | In-memory replica set as the default test database | Docker is not running on every machine; this needs zero setup and still gives real validators, roles, Change Streams, and transactions |
 | One shared working tree, no per-agent worktrees | Hivelane coordinates files in this checkout; worktrees would reintroduce merges |
 | Seed uses fake payment IDs | Stripe seeding needs the `PaymentProvider` from Phase 2 and a test key |
