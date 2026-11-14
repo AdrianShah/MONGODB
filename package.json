@@ -34,7 +34,9 @@
     "reset": "tsx scripts/reset.ts",
     "redteam": "tsx scripts/redteam.ts",
     "freeze": "tsx scripts/freeze.ts",
-    "unfreeze": "tsx scripts/freeze.ts --unfreeze"
+    "unfreeze": "tsx scripts/freeze.ts --unfreeze",
+    "agent:freeze": "tsx scripts/freeze.ts",
+    "agent:unfreeze": "tsx scripts/freeze.ts --unfreeze"
   },
   "dependencies": {
     "@escrowops/agent": "*",

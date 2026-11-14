@@ -138,6 +138,8 @@ export async function loadFreeze(db: Db): Promise<FreezeSummary | null> {
     at: last.at.toISOString(),
     voided: last.voided.map(pick),
     in_flight: last.in_flight.map(pick),
+    voided_reviews: last.voided_reviews?.length ?? 0,
+    role_revoked: last.role_revoked ?? false,
   };
 }
 

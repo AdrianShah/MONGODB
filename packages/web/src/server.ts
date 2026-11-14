@@ -6,7 +6,7 @@
  *   GET  /api/timeline/:traceId     S7: the $unionWith audit timeline
  *   GET  /ws/pipeline               live: the full pipeline after every change
  *   *    /api/login, /api/logout, /api/me, /api/reviews/...   forwarded to the approval service
- *   *    /api/freeze, /api/unfreeze   kill switch, forwarded to the approval service (it holds the admin path)
+ *   *    /api/agent/*, /api/freeze, /api/unfreeze   kill switch, forwarded to the approval service (it holds the admin path)
  *   GET  /*                         the built React app (packages/web/dist)
  *
  * The dashboard never writes. Approving and rejecting go to the approval service, which
@@ -124,7 +124,7 @@ export async function buildDashboardServer(opts: DashboardOptions): Promise<Fast
     reply.code(res.status).header('content-type', res.headers.get('content-type') ?? 'application/json');
     return reply.send(await res.text());
   };
-  for (const url of ['/api/login', '/api/logout', '/api/me', '/api/reviews', '/api/reviews/*', '/api/freeze', '/api/unfreeze']) {
+  for (const url of ['/api/login', '/api/logout', '/api/me', '/api/reviews', '/api/reviews/*', '/api/freeze', '/api/unfreeze', '/api/agent/*']) {
     app.route({ method: ['GET', 'POST'], url, handler: forward });
   }
 

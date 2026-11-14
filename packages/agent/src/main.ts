@@ -83,7 +83,7 @@ try {
       onResult: (r) => console.log(statusLine(r, { color })),
       onFrozen: (skipped) =>
         console.log(
-          `\n[agent] FROZEN by the kill switch: MongoDB revoked this user's insert on intents and review_queue. ` +
+          `\n[agent] FROZEN by the kill switch: MongoDB now refuses this agent's writes to intents and review_queue. ` +
             `Stopping the batch; ${skipped.length} ticket(s) not started.\n`,
         ),
     });

@@ -66,6 +66,10 @@ export interface FreezeSummary {
   at: string;
   voided: Array<{ ticket_id: string; amount_cents: number; source_id: string }>;
   in_flight: Array<{ ticket_id: string; amount_cents: number; source_id: string }>;
+  /** Pending reviews the freeze rejected. */
+  voided_reviews?: number;
+  /** True when updateRole also ran (local mongod); false on Atlas, where only the validator holds. */
+  role_revoked?: boolean;
 }
 
 export type PipelineMessage = {

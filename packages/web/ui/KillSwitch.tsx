@@ -1,17 +1,17 @@
 /**
  * Kill switch UI: a FROZEN banner and a Freeze / Unfreeze control.
  *
- * The dashboard stays read-only: the button posts to /api/freeze, which the dashboard server
- * forwards to the approval service. There an authenticated approver triggers an admin-path
- * `updateRole` that removes the agent's insert on intents and review_queue, and every unpaid
- * intent is voided. State shown here comes from the `kill_switch` collection via the live feed.
+ * The dashboard stays read-only: the button posts to /api/agent/freeze, which the dashboard
+ * server forwards to the approval service. There an authenticated approver triggers the admin
+ * path: an unsatisfiable validator on intents and review_queue (plus updateRole where the server
+ * allows it), and every unpaid intent is voided. State shown here comes from the `kill_switch` collection via the live feed.
  */
 import { useState } from 'react';
 import { dollars } from './api.js';
 import type { FreezeSummary } from '../src/types.js';
 import './kill-switch.css';
 
-async function post(path: '/api/freeze' | '/api/unfreeze', reason: string): Promise<void> {
+async function post(path: '/api/agent/freeze' | '/api/agent/unfreeze', reason: string): Promise<void> {
   const res = await fetch(path, {
     method: 'POST',
     credentials: 'same-origin',
@@ -31,11 +31,13 @@ export function FreezeBanner({ freeze }: { freeze: FreezeSummary | null | undefi
     <div className="freeze-banner" role="alert" data-testid="frozen-banner">
       <strong>FROZEN</strong>
       <span>
-        Agent frozen by <b>{freeze.actor}</b> at {new Date(freeze.at).toLocaleTimeString()}: {freeze.reason}. MongoDB revoked its
-        insert on <code>intents</code> and <code>review_queue</code>; its next write fails with code 13.
+        Agent frozen by <b>{freeze.actor}</b> at {new Date(freeze.at).toLocaleTimeString()}: {freeze.reason}. MongoDB now rejects every
+        insert into <code>intents</code> and <code>review_queue</code>; the agent's next write fails with code{' '}
+        {freeze.role_revoked ? '13 (Unauthorized)' : '121 (DocumentValidationFailure)'}.
       </span>
       <span className="freeze-voided" data-testid="frozen-voided">
         {freeze.voided.length} unpaid refund{freeze.voided.length === 1 ? '' : 's'} voided ({dollars(total)})
+        {freeze.voided_reviews ? `; ${freeze.voided_reviews} pending review${freeze.voided_reviews === 1 ? '' : 's'} rejected` : ''}
         {freeze.in_flight.length > 0 ? `; ${freeze.in_flight.length} already in flight` : ''}
       </span>
     </div>
@@ -58,7 +60,7 @@ export function FreezeControl({ freeze, me }: { freeze: FreezeSummary | null | u
     }
     setBusy(true);
     try {
-      await post(frozen ? '/api/unfreeze' : '/api/freeze', reason);
+      await post(frozen ? '/api/agent/unfreeze' : '/api/agent/freeze', reason);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -73,7 +75,7 @@ export function FreezeControl({ freeze, me }: { freeze: FreezeSummary | null | u
         onClick={act}
         disabled={busy}
         data-testid={frozen ? 'unfreeze-agent' : 'freeze-agent'}
-        title={frozen ? 'Restore the agent role to its definition' : 'Revoke the agent role\'s write privileges in MongoDB'}
+        title={frozen ? 'Restore the validators and the agent role' : 'Make MongoDB reject every new proposal from the agent'}
       >
         {busy ? '…' : frozen ? 'Unfreeze agent' : 'Freeze agent'}
       </button>

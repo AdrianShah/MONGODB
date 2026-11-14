@@ -13,7 +13,7 @@
  * Kill switch: kill_switch records are run data and are cleared too; if the agent role is
  * still frozen, reset unfreezes it (and records that), so a repeat demo starts live.
  */
-import { agentRoleFrozen, connectAdmin, loadConfigOrExit, unfreezeAgent } from '@escrowops/shared';
+import { agentFrozen, agentRoleFrozen, connectAdmin, loadConfigOrExit, unfreezeAgent } from '@escrowops/shared';
 import { clearFakeProvider, seedPaymentHook } from './lib/payments.js';
 import { formatResetSummary, resetDatabase } from './lib/seed-data.js';
 
@@ -32,9 +32,11 @@ async function main(): Promise<void> {
     if (createPayment) console.log('  payments   fresh Stripe test payments for ticket orders');
     console.log(`  fake provider ${fake}`);
     try {
-      if (await agentRoleFrozen(client, config.dbName)) {
+      const db = client.db(config.dbName);
+      const roleFrozen = await agentRoleFrozen(client, config.dbName).catch(() => false);
+      if ((await agentFrozen(db)) || roleFrozen) {
         await unfreezeAgent(client, config.dbName, { actor: 'cli:reset', reason: 'npm run reset' });
-        console.log('  kill switch agent was frozen; unfrozen (agent_role restored to roles.ts)');
+        console.log('  kill switch agent was frozen; unfrozen (validators and agent_role restored)');
       }
     } catch (err) {
       console.warn(`  kill switch could not check or restore agent_role: ${err instanceof Error ? err.message : String(err)}`);

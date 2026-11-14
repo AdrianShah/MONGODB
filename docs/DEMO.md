@@ -22,7 +22,7 @@ Companion to [PRD.md](PRD.md) and [TEST_PLAN.md](TEST_PLAN.md). Target length: 3
 2. All four processes running; executor logs visible.
 3. Both approvers logged in.
 4. Stripe Refunds tab loaded and empty for today.
-5. Commands pre-typed in shell history: `npm run batch`, `npm run redteam`, `npm run demo:kill`, `npm run freeze`, `npm run unfreeze`.
+5. Commands pre-typed in shell history: `npm run batch`, `npm run redteam`, `npm run demo:kill`, `npm run agent:freeze`, `npm run agent:unfreeze`.
 6. Agent not frozen: no red FROZEN banner on the dashboard (`npm run reset` unfreezes it).
 
 ## Script
@@ -111,13 +111,13 @@ Show the Stripe tab: one refund, not two.
 
 ### Optional beat — Freeze the agent mid-run (25 s)
 
-Use it when a judge asks "how do you stop it?", or in place of the kill beat. Start `npm run batch` and, while cards are still moving, click **Freeze agent** on the dashboard (or run `npm run freeze -- "suspected injection"`).
+Use it when a judge asks "how do you stop it?", or in place of the kill beat. Start `npm run batch` and, while cards are still moving, click **Freeze agent** on the dashboard (or run `npm run agent:freeze -- "suspected injection"`).
 
 - A red **FROZEN** banner shows who froze it and how many unpaid refunds were voided.
-- The batch terminal prints `MongoServerError: not authorized (code 13)` and `[agent] FROZEN by the kill switch ... Stopping the batch`.
+- The batch terminal prints the refusal (`code 121 DocumentValidationFailure: kill switch validator` on Atlas, `code 13 Unauthorized` on a local mongod where the role is revoked too) and `[agent] FROZEN by the kill switch ... Stopping the batch`.
 - Proposed-but-unpaid cards move to **Stopped**; their timeline ends with "Agent FROZEN by approver-a" and "Voided before payout".
 
-> "We didn't ask the agent to stop. We took its write permission away in MongoDB. Its next write bounced with error 13, and every refund it proposed that hadn't paid yet was voided in the ledger, so the executor can never pick it up. Anything already sent to Stripe isn't paid twice. Unfreeze restores the exact role from code."
+> "We didn't ask the agent to stop. MongoDB itself now rejects its writes: the collection validator says no to anything it inserts. Its next write bounced with error 121, and every refund it proposed that hadn't paid yet was voided in the ledger, so the executor can never pick it up. Anything already sent to Stripe isn't paid twice. Unfreeze restores the exact validators from the policy."
 
 Click **Unfreeze agent** before carrying on.
 
@@ -173,7 +173,7 @@ Four features carry the design: schema validators with expressions, collection-l
 No, and we don't claim it. The trust boundary is the agent. A hash chain on audit events would make admin edits detectable; that's on the roadmap.
 
 **"How do you stop or roll back an agent mid-run?"**
-Freeze it. An approver clicks Freeze (or runs `npm run freeze`); the approval service runs `updateRole` over an admin connection so `agent_role` loses insert on `intents` and `review_queue`. The running agent's next write is refused with code 13 and the batch stops. Every intent not yet paid gets a voided ledger tombstone, and the unique index on `source_id` means the executor can never pay it; one already past its checks is left to finish once. The `kill_switch` collection records who, when, why and which refunds were voided, and the timeline shows it. Unfreeze reapplies the role exactly as defined in code. The agent itself cannot undo any of this: it has no role-management privilege.
+Freeze it. An approver clicks Freeze (or runs `npm run agent:freeze`); the approval service uses an admin connection to `collMod` an unsatisfiable validator onto `intents` and `review_queue` (works on Atlas), and on a self-managed server also runs `updateRole` so `agent_role` loses insert there. The running agent's next write is refused (121, or 13 where the role was revoked) and the batch stops. Every intent not yet paid gets a voided ledger tombstone, and the unique index on `source_id` means the executor can never pay it; one already past its checks is left to finish once; pending reviews are rejected. The `kill_switch` collection records who, when, why and which refunds were voided, and the timeline shows it. Unfreeze reapplies the validators from the active policy and the role from code. The agent itself cannot undo any of this: it has no collMod or role-management privilege.
 
 **"How do you change the policy?"**
 Edit the policy document and run `apply-policy` as admin. It regenerates the validators and bumps the policy version, so proposals built against the old policy are rejected.

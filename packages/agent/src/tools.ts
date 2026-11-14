@@ -21,6 +21,7 @@ import {
   type Policy,
   type ReviewQueueDoc,
   type TicketDoc,
+  isFrozenValidationError,
 } from '@escrowops/shared';
 import type { TraceWriter } from './trace.js';
 
@@ -152,23 +153,32 @@ export interface ToolContext {
 export class ToolError extends Error {}
 
 /**
- * The server refused a proposal with Unauthorized (code 13): the kill switch removed the agent
- * role's insert privilege (packages/shared/src/killswitch.ts). Not a tool error the model can
- * work around: the batch stops.
+ * The kill switch stopped a proposal (packages/shared/src/killswitch.ts): either the frozen
+ * validator (DocumentValidationFailure, 121, works on Atlas) or the revoked role privilege
+ * (Unauthorized, 13). Not a tool error the model can work around: the batch stops.
  */
 export class AgentFrozenError extends Error {
   constructor(
     readonly collection: string,
     readonly serverError: MongoServerError,
   ) {
-    super(`agent frozen: MongoDB refused insert on ${collection} (code 13 ${serverError.codeName ?? 'Unauthorized'})`);
+    super(
+      `agent frozen: MongoDB refused insert on ${collection} (code ${String(serverError.code)} ${serverError.codeName ?? ''}: ${
+        serverError.code === 121 ? 'kill switch validator' : 'agent role insert revoked'
+      })`,
+    );
     this.name = 'AgentFrozenError';
   }
 }
 
-/** True when `err` is the server's Unauthorized (13), which is what a frozen agent gets. */
+/** True when `err` is the server's Unauthorized (13), what a role-frozen agent gets. */
 export function isUnauthorized(err: unknown): err is MongoServerError {
   return err instanceof MongoServerError && err.code === 13;
+}
+
+/** True when the kill switch refused this write, by role (13) or by validator (121). */
+export function isFrozenRefusal(err: unknown): err is MongoServerError {
+  return isUnauthorized(err) || isFrozenValidationError(err);
 }
 
 /** Runs the model's tool calls for one ticket and remembers the decision, if any. */
@@ -247,7 +257,7 @@ export class TicketTools {
       await trace.write('decision', { tool: 'propose_refund', output: this.decision });
       return { outcome: 'approved_automatically', amount_cents: proposal.amount_cents, note: 'The refund will be paid out.' };
     } catch (err) {
-      if (isUnauthorized(err)) throw new AgentFrozenError(COLLECTIONS.intents, err);
+      if (isFrozenRefusal(err)) throw new AgentFrozenError(COLLECTIONS.intents, err);
       if (isCode(err, 11000)) return this.alreadyProposed(proposal.amount_cents);
       if (!isCode(err, 121)) throw err;
 
@@ -264,7 +274,7 @@ export class TicketTools {
       try {
         await db.collection<ReviewQueueDoc>(COLLECTIONS.review_queue).insertOne(review);
       } catch (inner) {
-        if (isUnauthorized(inner)) throw new AgentFrozenError(COLLECTIONS.review_queue, inner);
+        if (isFrozenRefusal(inner)) throw new AgentFrozenError(COLLECTIONS.review_queue, inner);
         if (isCode(inner, 11000)) return this.alreadyProposed(proposal.amount_cents);
         throw inner;
       }

@@ -31,7 +31,7 @@ export interface AgentOptions {
   policy?: Policy;
 }
 
-/** `frozen`: the kill switch revoked the agent's insert privilege; the server said 13. */
+/** `frozen`: the kill switch refused the proposal (validator 121, or revoked role 13). */
 export type TicketStatus = Decision['status'] | 'no_decision' | 'refused' | 'error' | 'frozen';
 
 export interface TicketResult {

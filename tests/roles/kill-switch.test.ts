@@ -7,14 +7,19 @@
  * K7-K8  the freeze is audited and shows on the timeline; no runtime role can write the record.
  * K9     the agent loop stops the batch cleanly on 13.
  * K10    the approval-service endpoint: approvers only, actor from the session.
+ * K11    Atlas mode (no updateRole): the validator alone freezes the agent with a real 121,
+ *        voids unpaid intents and pending reviews, survives applySchema, and unfreeze restores it.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ObjectId, type Db, type Document, type MongoClient } from 'mongodb';
 import {
   COLLECTIONS,
   ROLE_NAMES,
+  agentFrozen,
   agentRoleFrozen,
   applyRoles,
+  applySchema,
+  FROZEN_VALIDATOR_TITLE,
   connectAdmin,
   freezeAgent,
   loadFreezeStatus,
@@ -24,6 +29,7 @@ import {
   type AgentTraceDoc,
   type KillSwitchDoc,
   type LedgerDoc,
+  type ReviewQueueDoc,
 } from '@escrowops/shared';
 import { Executor, FakeProvider } from '@escrowops/executor';
 import { resolveTicket, runBatch, type TicketResult } from '@escrowops/agent';
@@ -37,7 +43,7 @@ import { abandonedPending, insertIntent, ledgerOf, seedOrder } from '../executor
 import { proposeScript, scriptedModel } from '../agent/fake-model.js';
 import { login } from '../api/fixtures.js';
 
-const { UNAUTHORIZED } = ERROR_CODES;
+const { UNAUTHORIZED, DOCUMENT_VALIDATION_FAILURE } = ERROR_CODES;
 const t = useTestDb('kill_switch');
 
 let agent: Db;
@@ -72,6 +78,7 @@ beforeAll(async () => {
   agent = (await t().connectAsRole('agent')).db(t().dbName);
 });
 beforeEach(async () => {
+  if (await agentFrozen(t().db)) await unfreezeAgent(t().admin, t().dbName, { actor: 'test', revokeRole: false });
   await applyRoles(t().admin, t().dbName); // unfrozen
   await resetDatabase(t().db);
   provider = new FakeProvider();
@@ -353,6 +360,152 @@ describe('K10 approval service endpoint', () => {
       expect(res.statusCode).toBe(503);
     } finally {
       await bare.app.close();
+    }
+  });
+});
+
+describe('K11 Atlas mode: the validator alone freezes the agent', () => {
+  const atlasFreeze = (reason = 'atlas freeze') => freezeAgent(t().admin, t().dbName, { actor: 'approver-a', reason, revokeRole: false });
+
+  it('K11: the agent insert on intents and review_queue fails with 121 naming the kill switch; reads and traces still work', async () => {
+    await agent.collection(COLLECTIONS.intents).insertOne(buildIntent({ amount_cents: 1_000, trace_id: 'tr-k11-before' }));
+    const record = await atlasFreeze();
+    expect(record).toMatchObject({ enforcement: ['validator'], role_revoked: false });
+    expect(await agentFrozen(t().db)).toBe(true);
+    expect(await agentRoleFrozen(t().admin, t().dbName)).toBe(false); // the role was never touched
+
+    const err = await expectServerError(
+      () => agent.collection(COLLECTIONS.intents).insertOne(buildIntent({ amount_cents: 1_000, trace_id: 'tr-k11-after' })),
+      DOCUMENT_VALIDATION_FAILURE,
+    );
+    expect(JSON.stringify(err.errInfo)).toContain(FROZEN_VALIDATOR_TITLE);
+    expect(JSON.stringify(err.errInfo)).toContain('frozen by approver-a');
+    await expectServerError(
+      () => agent.collection(COLLECTIONS.review_queue).insertOne({ ...buildIntent({ amount_cents: 90_000, trace_id: 'tr-k11-rq' }), status: 'pending' }),
+      DOCUMENT_VALIDATION_FAILURE,
+    );
+    // Adding fields cannot satisfy it.
+    await expectServerError(
+      () => agent.collection(COLLECTIONS.intents).insertOne({ ...buildIntent({ amount_cents: 1_000, trace_id: 'tr-k11-x' }), frozen: false }),
+      DOCUMENT_VALIDATION_FAILURE,
+    );
+    expect(await agent.collection(COLLECTIONS.tickets).findOne({})).not.toBeNull();
+    await agent
+      .collection(COLLECTIONS.agent_traces)
+      .insertOne({ trace_id: 'tr-k11', ticket_id: 'T-1001', seq: 0, kind: 'error', text: 'frozen', created_at: new Date() });
+    expect(await t().db.collection(COLLECTIONS.intents).countDocuments({ trace_id: { $in: ['tr-k11-after', 'tr-k11-x'] } })).toBe(0);
+  });
+
+  it('K11: unpaid intents are voided and pending reviews rejected, tied to the approver who froze it', async () => {
+    const order = await seedOrder(t().db);
+    const intent = await insertIntent(t().db, order, 3_300);
+    const reviewId = new ObjectId();
+    await t()
+      .db.collection(COLLECTIONS.review_queue)
+      .insertOne({ ...buildIntent({ amount_cents: 90_000, trace_id: 'tr-k11-review' }), _id: reviewId, status: 'pending' });
+
+    const record = await atlasFreeze('runaway agent');
+    expect(record.voided.map((v) => v.source_id)).toEqual([`intents:${intent._id.toHexString()}`]);
+    expect(record.voided_reviews.map((v) => v.review_id.toHexString())).toEqual([reviewId.toHexString()]);
+    expect(record.voided_trace_ids).toEqual(expect.arrayContaining([intent.trace_id, 'tr-k11-review']));
+
+    const review = await t().db.collection<ReviewQueueDoc>(COLLECTIONS.review_queue).findOne({ _id: reviewId });
+    expect(review).toMatchObject({ status: 'rejected', voided_by: record._id });
+    expect(review!.void_reason).toMatch(/approver-a.*runaway agent/);
+    const entry = await t().db.collection<LedgerDoc>(COLLECTIONS.ledger).findOne({ source_doc_id: intent._id });
+    expect(entry).toMatchObject({ status: 'failed', voided_by: record._id });
+    expect(entry!.failure_reason).toMatch(/agent frozen by approver-a/);
+
+    await startExecutor();
+    await executor!.idle();
+    expect(provider.calls).toHaveLength(0);
+  });
+
+  it('K11: re-applying the schema (setup, apply-policy) does not unfreeze; unfreeze restores the policy validators', async () => {
+    await atlasFreeze();
+    await applySchema(t().db);
+    expect(await agentFrozen(t().db)).toBe(true);
+    await expectServerError(
+      () => agent.collection(COLLECTIONS.intents).insertOne(buildIntent({ amount_cents: 1_000, trace_id: 'tr-k11-schema' })),
+      DOCUMENT_VALIDATION_FAILURE,
+    );
+
+    const un = await unfreezeAgent(t().admin, t().dbName, { actor: 'approver-b', revokeRole: false });
+    expect(un).toMatchObject({ action: 'unfreeze', actor: 'approver-b', already: false });
+    expect(await agentFrozen(t().db)).toBe(false);
+    expect((await applySchema(t().db)).updated).toEqual([]); // back to exactly the policy validators
+    await agent.collection(COLLECTIONS.intents).insertOne(buildIntent({ amount_cents: 1_000, trace_id: 'tr-k11-unfrozen' }));
+    // The normal policy still holds: over the auto cap is still a 121, but not the kill switch's.
+    const err = await expectServerError(
+      () => agent.collection(COLLECTIONS.intents).insertOne(buildIntent({ amount_cents: 9_000_000, trace_id: 'tr-k11-big' })),
+      DOCUMENT_VALIDATION_FAILURE,
+    );
+    expect(JSON.stringify(err.errInfo)).not.toContain(FROZEN_VALIDATOR_TITLE);
+  });
+
+  it('K11: approvers can still act on existing reviews while frozen', async () => {
+    const reviewId = new ObjectId();
+    await atlasFreeze();
+    // Inserted by admin behind the freeze is impossible too: the validator applies to every writer.
+    await expectServerError(
+      () => t().db.collection(COLLECTIONS.review_queue).insertOne({ ...buildIntent({ amount_cents: 90_000, trace_id: 'tr-k11-a' }), _id: reviewId, status: 'pending' }),
+      DOCUMENT_VALIDATION_FAILURE,
+    );
+    await unfreezeAgent(t().admin, t().dbName, { actor: 'test', revokeRole: false });
+    await t().db.collection(COLLECTIONS.review_queue).insertOne({ ...buildIntent({ amount_cents: 90_000, trace_id: 'tr-k11-a' }), _id: reviewId, status: 'blocked' });
+    await atlasFreeze();
+    const approver = (await t().connectAsRole('approver')).db(t().dbName);
+    const res = await approver.collection(COLLECTIONS.review_queue).updateOne({ _id: reviewId }, { $set: { updated_at: new Date() } });
+    expect(res.modifiedCount).toBe(1);
+  });
+
+  it('K11: the agent batch stops with "frozen" on the validator 121', async () => {
+    await atlasFreeze();
+    const { createMessage } = scriptedModel([...proposeScript('T-1001', 'O-5101', 8900), ...proposeScript('T-1002', 'O-5102', 1000)]);
+    let skipped: string[] = [];
+    const results = await runBatch(['T-1001', 'T-1002'], { db: agent, createMessage, model: 'fake', concurrency: 1, onFrozen: (s) => (skipped = s) });
+    expect(results.map((r) => r.status)).toEqual(['frozen']);
+    expect(results[0]!.detail).toMatch(/code 121/);
+    expect(skipped).toEqual(['T-1002']);
+    expect(await t().db.collection(COLLECTIONS.intents).countDocuments()).toBe(0);
+    expect(await t().db.collection(COLLECTIONS.review_queue).countDocuments()).toBe(0);
+  });
+
+  it('K11: POST /api/agent/freeze and /api/agent/unfreeze work with role revocation off', async () => {
+    const client = await t().connectAsRole('approver');
+    const admins: MongoClient[] = [];
+    const server = await buildApiServer({
+      client,
+      db: client.db(t().dbName),
+      approvers: DEFAULT_APPROVERS,
+      log: () => {},
+      killSwitch: {
+        dbName: t().dbName,
+        revokeRole: false,
+        connectAdmin: async () => {
+          const c = await connectAdmin(t().config);
+          admins.push(c);
+          return c;
+        },
+      },
+    });
+    await server.app.ready();
+    try {
+      expect((await server.app.inject({ method: 'POST', url: '/api/agent/freeze', payload: {} })).statusCode).toBe(401);
+      const auth = { authorization: `Bearer ${await login(server.app, 'approver-b')}` };
+      const res = await server.app.inject({ method: 'POST', url: '/api/agent/freeze', headers: auth, payload: { reason: 'stage demo' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ frozen: true, record: { actor: 'approver-b', enforcement: ['validator'], role_revoked: false } });
+      expect((await server.app.inject({ method: 'GET', url: '/api/agent/status', headers: auth })).json()).toMatchObject({ frozen: true });
+      await expectServerError(
+        () => agent.collection(COLLECTIONS.intents).insertOne(buildIntent({ amount_cents: 1_000, trace_id: 'tr-k11-api' })),
+        DOCUMENT_VALIDATION_FAILURE,
+      );
+      expect((await server.app.inject({ method: 'POST', url: '/api/agent/unfreeze', headers: auth, payload: {} })).statusCode).toBe(200);
+      expect(await agentFrozen(t().db)).toBe(false);
+    } finally {
+      await server.app.close();
+      await Promise.all(admins.map((c) => c.close().catch(() => undefined)));
     }
   });
 });

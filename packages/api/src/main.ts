@@ -2,8 +2,9 @@
  * Approval service: `npm run api`. Connects as the approver database user
  * (APPROVER_DB_USER). Listens on API_HOST:API_PORT (default 127.0.0.1:4000).
  *
- * Kill switch: POST /api/freeze and /api/unfreeze open a short-lived admin connection
- * (MONGODB_URI) for the one updateRole + rollback, then close it. KILL_SWITCH=off disables them.
+ * Kill switch: POST /api/agent/freeze and /api/agent/unfreeze open a short-lived admin
+ * connection (MONGODB_URI) for the collMod (+ best-effort updateRole) and rollback, then close it.
+ * KILL_SWITCH=off disables them; KILL_SWITCH_ROLE=off skips the updateRole layer.
  */
 import { connectAdmin, connectAs, loadConfigOrExit } from '@escrowops/shared';
 import { checkApproverSafety, loadApprovers } from './approvers.js';
@@ -22,12 +23,14 @@ const port = Number(process.env['API_PORT'] ?? 4000);
 const host = process.env['API_HOST'] ?? '127.0.0.1';
 
 const client = await connectAs('approver', config);
-const killSwitchOff = ['0', 'off', 'false', 'no'].includes((process.env['KILL_SWITCH'] ?? '').toLowerCase());
+const isOff = (v: string | undefined) => ['0', 'off', 'false', 'no'].includes((v ?? '').toLowerCase());
+const killSwitchOff = isOff(process.env['KILL_SWITCH']);
+const revokeRole = !isOff(process.env['KILL_SWITCH_ROLE']);
 const { app } = await buildApiServer({
   client,
   db: client.db(config.dbName),
   approvers,
-  ...(killSwitchOff ? {} : { killSwitch: { connectAdmin: () => connectAdmin(config, { serverSelectionTimeoutMS: 10_000 }), dbName: config.dbName } }),
+  ...(killSwitchOff ? {} : { killSwitch: { connectAdmin: () => connectAdmin(config, { serverSelectionTimeoutMS: 10_000 }), dbName: config.dbName, revokeRole } }),
 });
 
 const shutdown = async (signal: string) => {

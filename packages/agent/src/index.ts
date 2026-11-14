@@ -11,7 +11,7 @@ export {
 export { runBatch, statusLine } from './batch.js';
 export { loadAgentSettings, InvalidAgentEnvError, type AgentSettings } from './config.js';
 export { SYSTEM_PROMPT } from './prompt.js';
-export { TOOLS, TicketTools, ToolError, AgentFrozenError, isUnauthorized, describeViolations, failedRules, idempotencyKey, type Decision, type ToolContext } from './tools.js';
+export { TOOLS, TicketTools, ToolError, AgentFrozenError, isUnauthorized, isFrozenRefusal, describeViolations, failedRules, idempotencyKey, type Decision, type ToolContext } from './tools.js';
 export { TraceWriter } from './trace.js';
 export {
   buildExpectedRecording,

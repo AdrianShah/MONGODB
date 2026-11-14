@@ -9,9 +9,10 @@
  *   POST /api/reviews/:id/approve  { note? }
  *   POST /api/reviews/:id/reject   { note? }
  *   GET  /ws                     snapshot of pending reviews, then every review change
- *   GET  /api/freeze             kill switch status, read from the agent role on the server
- *   POST /api/freeze   { reason? }  freeze the agent: revoke its proposal inserts, void unpaid intents
- *   POST /api/unfreeze { reason? }  restore the agent role to its definition in roles.ts
+ *   GET  /api/agent/status           kill switch status, read from the intents validator on the server
+ *   POST /api/agent/freeze   { reason? }  freeze the agent (validator + role), void unpaid refunds
+ *   POST /api/agent/unfreeze { reason? }  restore validators (active policy) and role (roles.ts)
+ *   (/api/freeze, /api/unfreeze and GET /api/freeze are aliases)
  *
  * Every route except login and health needs a session (cookie, or `Authorization: Bearer`).
  * The approver is whoever owns the session; an `approver_id` in a body is ignored (S1, I17).
@@ -20,8 +21,7 @@ import type { IncomingMessage } from 'node:http';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { ObjectId, type Db, type MongoClient } from 'mongodb';
 import {
-  RoleManagementRefusedError,
-  agentRoleFrozen,
+  agentFrozen,
   freezeAgent,
   loadFreezeStatus,
   unfreezeAgent,
@@ -43,11 +43,11 @@ export interface ApiOptions {
   /** Test hook (C10). */
   fault?: FaultHook;
   /**
-   * Kill switch. The approval service itself runs as escrow_approver, which cannot change roles;
-   * freeze and unfreeze open a short-lived admin connection (MONGODB_URI) for that one command
-   * and close it. Omitted: the freeze routes answer 503.
+   * Kill switch. The approval service itself runs as escrow_approver, which cannot collMod;
+   * freeze and unfreeze open a short-lived admin connection (MONGODB_URI) for the operation
+   * and close it. Omitted: the freeze routes answer 503. `revokeRole: false` skips updateRole.
    */
-  killSwitch?: { connectAdmin: () => Promise<MongoClient>; dbName: string };
+  killSwitch?: { connectAdmin: () => Promise<MongoClient>; dbName: string; revokeRole?: boolean };
 }
 
 export interface ApiServer {
@@ -169,9 +169,6 @@ export async function buildApiServer(opts: ApiOptions): Promise<ApiServer> {
     const admin = await ks.connectAdmin();
     try {
       return await fn(admin, ks.dbName);
-    } catch (err) {
-      if (err instanceof RoleManagementRefusedError) return reply.code(503).send({ error: 'role_management_refused', message: err.message });
-      throw err;
     } finally {
       await admin.close().catch(() => undefined);
     }
@@ -183,27 +180,41 @@ export async function buildApiServer(opts: ApiOptions): Promise<ApiServer> {
     reason: doc.reason,
     at: doc.at,
     voided: doc.voided.map((v) => ({ source_id: v.source_id, ticket_id: v.ticket_id, amount_cents: v.amount_cents })),
+    voided_reviews: (doc.voided_reviews ?? []).map((v) => ({ review_id: v.review_id.toHexString(), ticket_id: v.ticket_id, amount_cents: v.amount_cents })),
     in_flight: doc.in_flight,
+    enforcement: doc.enforcement,
+    role_revoked: doc.role_revoked,
+    role_note: doc.role_note,
     already: doc.already,
   });
 
-  app.get('/api/freeze', { preHandler: requireApprover }, async (_req, reply) =>
+  const status = async (_req: FastifyRequest, reply: FastifyReply) =>
     withAdmin(reply, async (admin, dbName) => {
       const { last } = await loadFreezeStatus(admin.db(dbName));
-      return { frozen: await agentRoleFrozen(admin, dbName), last: last ? summarize(last) : null };
-    }),
-  );
-  for (const action of ['freeze', 'unfreeze'] as const) {
-    app.post<{ Body: { reason?: string } | null }>(`/api/${action}`, { preHandler: requireApprover, schema: reasonSchema }, async (req, reply) => {
+      return { frozen: await agentFrozen(admin.db(dbName)), last: last ? summarize(last) : null };
+    });
+  app.get('/api/agent/status', { preHandler: requireApprover }, status);
+  app.get('/api/freeze', { preHandler: requireApprover }, status);
+  for (const [action, url] of [
+    ['freeze', '/api/agent/freeze'],
+    ['unfreeze', '/api/agent/unfreeze'],
+    ['freeze', '/api/freeze'],
+    ['unfreeze', '/api/unfreeze'],
+  ] as const) {
+    app.post<{ Body: { reason?: string } | null }>(url, { preHandler: requireApprover, schema: reasonSchema }, async (req, reply) => {
       if (killSwitchBusy) return reply.code(409).send({ error: 'busy', message: 'a freeze or unfreeze is already running' });
       killSwitchBusy = true;
       try {
         const actor = approverOf(req)!;
         return await withAdmin(reply, async (admin, dbName) => {
-          const doc = await (action === 'freeze' ? freezeAgent : unfreezeAgent)(admin, dbName, { actor, reason: req.body?.reason });
+          const doc = await (action === 'freeze' ? freezeAgent : unfreezeAgent)(admin, dbName, {
+            actor,
+            reason: req.body?.reason,
+            revokeRole: opts.killSwitch?.revokeRole ?? true,
+          });
           log(
             action === 'freeze'
-              ? `[api] KILL SWITCH: ${actor} froze the agent (${doc.reason}); voided ${doc.voided.length} unpaid intent(s), ${doc.in_flight.length} in flight`
+              ? `[api] KILL SWITCH: ${actor} froze the agent (${doc.reason}); voided ${doc.voided.length} unpaid intent(s) and ${doc.voided_reviews.length} pending review(s), ${doc.in_flight.length} in flight; enforced by ${doc.enforcement.join(' + ')}`
               : `[api] KILL SWITCH: ${actor} unfroze the agent (${doc.reason})`,
           );
           return { frozen: action === 'freeze', record: summarize(doc) };

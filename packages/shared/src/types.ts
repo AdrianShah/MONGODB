@@ -141,6 +141,9 @@ export interface ReviewQueueDoc extends RefundProposal {
   status: 'pending' | 'approved' | 'rejected' | 'blocked';
   validator_error: ValidatorErrorRecord;
   updated_at?: Date;
+  /** Set when the kill switch voided this pending review: the `kill_switch` record and why. */
+  voided_by?: ObjectId;
+  void_reason?: string;
 }
 
 // ---------------------------------------------------------------------------

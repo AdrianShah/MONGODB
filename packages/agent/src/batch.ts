@@ -35,7 +35,7 @@ export function statusLine(r: TicketResult, opts: { color?: boolean } = {}): str
     case 'declined':
       return `${id} ${c.red('✖')} declined: ${d?.status === 'declined' ? d.reason : ''}`;
     case 'frozen':
-      return `${id} ${c.red('⏸')} ${c.red('MongoServerError: not authorized (code 13)')} agent is frozen; proposal not written`;
+      return `${id} ${c.red('⏸')} ${c.red(`MongoServerError ${r.detail ?? ''}`)} agent is frozen; proposal not written`;
     default:
       return `${id} ${c.red('!')} ${r.status}${r.detail ? `: ${r.detail}` : ''}`;
   }
