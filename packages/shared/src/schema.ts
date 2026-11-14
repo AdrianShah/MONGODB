@@ -45,6 +45,9 @@ export interface IndexDefinition {
   options: CreateIndexesOptions & { name: string };
 }
 
+/** Same string as killswitch.ts (not imported, to keep schema.ts free of a cycle). */
+export const FROZEN_VALIDATOR_TITLE = 'EscrowOps kill switch: agent frozen';
+
 export const VALIDATION_LEVEL = 'strict' as const;
 export const VALIDATION_ACTION = 'error' as const;
 
@@ -248,6 +251,11 @@ export async function applySchema(db: Db, policy: Policy = DEFAULT_POLICY): Prom
     if (!validator) continue;
 
     const options = existing.get(name) ?? {};
+    // Kill switch (killswitch.ts): a frozen collection stays frozen until unfreezeAgent.
+    if ((options['validator'] as Document | undefined)?.['$jsonSchema']?.['title'] === FROZEN_VALIDATOR_TITLE) {
+      summary.unchanged.push(`validator:${name}`);
+      continue;
+    }
     const upToDate =
       sameDocument(options['validator'], validator) &&
       options['validationLevel'] === VALIDATION_LEVEL &&

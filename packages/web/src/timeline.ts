@@ -1,6 +1,6 @@
 /**
  * S7: everything that happened to one trace, as ONE aggregation: agent_traces $unionWith
- * intents, review_queue, approvals (joined to their review), approved and ledger, sorted
+ * intents, review_queue, approvals (joined to their review), approved, ledger and kill_switch, sorted
  * by time. Read-only, as escrow_dashboard.
  */
 import type { Db, Document } from 'mongodb';
@@ -69,7 +69,11 @@ export function timelinePipeline(traceId: string): Document[] {
     {
       $unionWith: {
         coll: COLLECTIONS.ledger,
-        pipeline: [{ $match: { trace_id: traceId } }, event('ledger', { $literal: 'pending' }, '$created_at', { amount_cents: 1, source_id: 1 })],
+        // A kill switch tombstone never started a payout, so it has no "pending" event.
+        pipeline: [
+          { $match: { trace_id: traceId, voided_by: { $exists: false } } },
+          event('ledger', { $literal: 'pending' }, '$created_at', { amount_cents: 1, source_id: 1 }),
+        ],
       },
     },
     {
@@ -78,6 +82,16 @@ export function timelinePipeline(traceId: string): Document[] {
         pipeline: [
           { $match: { trace_id: traceId, status: { $in: ['succeeded', 'failed'] } } },
           event('ledger', '$status', '$updated_at', { amount_cents: 1, provider: 1, provider_refund_id: 1, failure_reason: 1 }),
+        ],
+      },
+    },
+    {
+      // Kill switch: the freeze that voided this trace's refund (who, when, why).
+      $unionWith: {
+        coll: COLLECTIONS.kill_switch,
+        pipeline: [
+          { $match: { action: 'freeze', voided_trace_ids: traceId } },
+          event('kill_switch', { $literal: 'frozen' }, '$at', { actor: 1, reason: 1, voided_count: { $size: '$voided' } }),
         ],
       },
     },
@@ -136,7 +150,10 @@ function describe(source: string, kind: string, r: Document, rules: string[]): s
     case 'ledger':
       if (kind === 'pending') return `Executor started payout ${dollars(r['amount_cents'])} (${r['source_id']})`;
       if (kind === 'succeeded') return `Paid: ${r['provider']} refund ${r['provider_refund_id']}`;
+      if (String(r['failure_reason'] ?? '').startsWith('voided_by_kill_switch')) return `Voided before payout: ${r['failure_reason']}`;
       return `Payout failed: ${r['failure_reason']}`;
+    case 'kill_switch':
+      return `Agent FROZEN by ${r['actor']}: ${r['reason']}. MongoDB revoked its insert privilege; ${r['voided_count']} unpaid refund(s) voided, including this one`;
     default:
       return kind;
   }

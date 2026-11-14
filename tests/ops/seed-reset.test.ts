@@ -172,7 +172,7 @@ describe('reset', () => {
 
   it('touches only run collections and the seed set, and the two cover every collection', () => {
     expect([...RUN_COLLECTIONS].sort()).toEqual(
-      ['agent_traces', 'approvals', 'approved', 'budgets', 'executor_state', 'intents', 'ledger', 'review_queue'],
+      ['agent_traces', 'approvals', 'approved', 'budgets', 'executor_state', 'intents', 'kill_switch', 'ledger', 'review_queue'],
     );
     expect([...RUN_COLLECTIONS, ...SEED_COLLECTIONS].sort()).toEqual([...ALL_COLLECTIONS].sort());
   });

@@ -136,3 +136,7 @@ To run the full role suite (R1 to R26) against Atlas, the test harness would nee
 
 - The role tests (`tests/roles`) create their own users and roles per test database, which Atlas does not allow. Running them on Atlas needs a mode that uses the five pre-created users and a single shared database.
 - `npm run setup` cannot detect drift between `ROLE_DEFINITIONS` and the roles in Atlas. After changing `roles.ts`, regenerate and re-apply the roles by hand.
+
+## Kill switch on Atlas
+
+The kill switch works on Atlas without the Admin API. Its primary layer is a validator: the admin connection (MONGODB_URI) runs `collMod` on `intents` and `review_queue` with an unsatisfiable `$jsonSchema`, so the agent's next insert fails with code 121 (DocumentValidationFailure) naming the kill switch. The optional second layer, `updateRole agent_role`, is refused by Atlas; the freeze records that in `role_note` and carries on. The MONGODB_URI user needs `collMod` on the database and write access to `ledger`, `review_queue` and `kill_switch` (the setup user already has this). Set `KILL_SWITCH_ROLE=off` to skip the role attempt entirely. `tests/roles/kill-switch.test.ts` (K11) proves the validator-only path.

@@ -8,7 +8,7 @@ import type { Db } from 'mongodb';
 import type Anthropic from '@anthropic-ai/sdk';
 import { COLLECTIONS, DEFAULT_POLICY, type Policy, type PolicyDoc, type TicketDoc } from '@escrowops/shared';
 import { SYSTEM_PROMPT } from './prompt.js';
-import { TicketTools, TOOLS, ToolError, type Decision } from './tools.js';
+import { AgentFrozenError, TicketTools, TOOLS, ToolError, type Decision } from './tools.js';
 import { COMPROMISED_SYSTEM_PROMPT, COMPROMISED_TOOLS, CompromisedTicketTools, type RejectedWrite } from './compromised.js';
 import { TraceWriter } from './trace.js';
 
@@ -37,7 +37,8 @@ export interface AgentOptions {
   compromised?: boolean;
 }
 
-export type TicketStatus = Decision['status'] | 'no_decision' | 'refused' | 'error';
+/** `frozen`: the kill switch refused the proposal (validator 121, or revoked role 13). */
+export type TicketStatus = Decision['status'] | 'no_decision' | 'refused' | 'error' | 'frozen';
 
 export interface TicketResult {
   ticket_id: string;
@@ -141,6 +142,11 @@ export async function resolveTicket(ticketId: string, opts: AgentOptions): Promi
         await trace.write('tool_result', { tool: call.name, output });
         results.push({ type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(output) });
       } catch (err) {
+        if (err instanceof AgentFrozenError) {
+          // Recorded while agent_traces insert is still allowed, so the timeline shows the stop.
+          await trace.write('error', { tool: call.name, text: err.message }).catch(() => undefined);
+          return result('frozen', turn, { detail: err.message });
+        }
         if (!(err instanceof ToolError)) throw err;
         await trace.write('tool_result', { tool: call.name, output: { error: err.message } });
         results.push({ type: 'tool_result', tool_use_id: call.id, content: err.message, is_error: true });
