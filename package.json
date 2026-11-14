@@ -34,14 +34,15 @@
     "reset": "tsx scripts/reset.ts",
     "redteam": "tsx scripts/redteam.ts",
     "demo:jailbreak": "tsx scripts/jailbreak.ts",
-    "jailbreak": "tsx scripts/jailbreak.ts"
+    "jailbreak": "tsx scripts/jailbreak.ts",
+    "demo:tunnel": "tsx scripts/tunnel.ts"
   },
   "dependencies": {
     "@escrowops/agent": "*",
     "@escrowops/api": "*",
     "@escrowops/executor": "*",
-    "@escrowops/web": "*",
     "@escrowops/shared": "*",
+    "@escrowops/web": "*",
     "dotenv": "^18.0.10",
     "mongodb": "^7.9.0"
   },

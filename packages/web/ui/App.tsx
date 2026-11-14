@@ -12,6 +12,7 @@ import {
   type TimelineEvent,
   type TimelineIntegrity,
 } from './api.js';
+import { ListenButton, NarrateButton } from './voice.js';
 
 const COLUMNS: Array<{ id: string; title: string; hint: string; stages: Stage[] }> = [
   { id: 'intake', title: 'Intake', hint: 'Waiting for or being worked by the agent', stages: ['open', 'working'] },
@@ -298,6 +299,7 @@ function Review({ review, me }: { review: ReviewCard; me: string | null }) {
           ))}
         </ul>
       )}
+      {me && <ListenButton reviewId={review.id} />}
       <div className="actions">
         <button className="approve" disabled={disabled} onClick={() => decide('approve')} data-testid="approve">
           Approve
@@ -340,6 +342,7 @@ function Timeline({ ticket, onClose }: { ticket: TicketCard; onClose: () => void
             <p className="small muted">
               One <code>$unionWith</code> aggregation over trace <code>{ticket.trace_id}</code>
             </p>
+            {ticket.trace_id && <NarrateButton traceId={ticket.trace_id} />}
           </div>
           <button className="ghost" onClick={onClose} aria-label="Close">
             ✕
