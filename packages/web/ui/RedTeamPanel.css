@@ -1,0 +1,24 @@
+.redteam { margin: 0 24px 24px; padding: 16px 18px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.redteam-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.redteam-head h2 { margin: 0; font-size: 1rem; }
+.redteam-head .hint { margin: 4px 0 0; color: var(--muted); font-size: 0.85rem; }
+.redteam-run { background: var(--red); border-color: var(--red); color: #1a0707; font-weight: 600; }
+.redteam-identity { margin: 12px 0 0; color: var(--muted); font-size: 0.85rem; }
+.redteam-rows { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.redteam-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); animation: redteam-in 0.25s ease-out; }
+.redteam-queued { opacity: 0.45; }
+.redteam-running { border-color: var(--amber); }
+.redteam-what { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.redteam-tried { color: var(--muted); font-size: 0.82rem; font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+.redteam-errmsg { color: var(--muted); font-size: 0.75rem; overflow-wrap: anywhere; opacity: 0.8; }
+.redteam-verdict { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.redteam-badge { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; padding: 3px 9px; border-radius: 999px; }
+.redteam-badge.denied { background: rgba(0, 237, 100, 0.15); color: var(--green); border: 1px solid var(--green); }
+.redteam-badge.allowed { background: rgba(255, 107, 107, 0.18); color: var(--red); border: 1px solid var(--red); }
+.redteam-badge.pending { color: var(--muted); border: 1px solid var(--line); }
+.redteam-code { white-space: nowrap; }
+.redteam-summary { margin: 12px 0 0; font-weight: 600; }
+.redteam-summary.ok { color: var(--green); }
+.redteam-summary.bad { color: var(--red); }
+@keyframes redteam-in { from { opacity: 0; transform: translateY(-4px); } }
+@media (max-width: 640px) { .redteam { margin: 0 16px 16px; } .redteam-row { flex-direction: column; align-items: flex-start; } }

@@ -10,6 +10,7 @@ export {
   type FaultHook,
 } from './reviews.js';
 export { ReviewFeed } from './feed.js';
+export { registerRedTeam, type RedTeamConnections, type RedTeamOptions } from './redteam.js';
 export {
   ApproverDirectory,
   SessionStore,
