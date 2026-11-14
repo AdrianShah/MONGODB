@@ -26,11 +26,33 @@ const client = await connectAs('approver', config);
 const isOff = (v: string | undefined) => ['0', 'off', 'false', 'no'].includes((v ?? '').toLowerCase());
 const killSwitchOff = isOff(process.env['KILL_SWITCH']);
 const revokeRole = !isOff(process.env['KILL_SWITCH_ROLE']);
+// The dashboard's red-team panel: each run logs in fresh as the agent (attacks) and the
+// read-only dashboard user (verification); the approver connection is never used for it.
+// REDTEAM_PANEL=0 turns the route off.
+const redteam =
+  process.env['REDTEAM_PANEL'] === '0'
+    ? undefined
+    : {
+        connect: async () => {
+          const agent = await connectAs('agent', config, { serverSelectionTimeoutMS: 10_000 });
+          const reader = await connectAs('dashboard', config, { serverSelectionTimeoutMS: 10_000 }).catch(async (err: unknown) => {
+            await agent.close();
+            throw err;
+          });
+          return {
+            agentDb: agent.db(config.dbName),
+            readDb: reader.db(config.dbName),
+            agentUsername: config.users.agent.username,
+            close: async () => void (await Promise.all([agent.close(), reader.close()])),
+          };
+        },
+      };
 const { app } = await buildApiServer({
   client,
   db: client.db(config.dbName),
   approvers,
   ...(killSwitchOff ? {} : { killSwitch: { connectAdmin: () => connectAdmin(config, { serverSelectionTimeoutMS: 10_000 }), dbName: config.dbName, revokeRole } }),
+  ...(redteam ? { redteam } : {}),
 });
 
 const shutdown = async (signal: string) => {

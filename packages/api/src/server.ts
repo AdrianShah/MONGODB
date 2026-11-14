@@ -8,6 +8,7 @@
  *   GET  /api/reviews/:id
  *   POST /api/reviews/:id/approve  { note? }
  *   POST /api/reviews/:id/reject   { note? }
+ *   POST /api/redteam/run        run the demo attacks as the agent, streamed as SSE (./redteam.ts)
  *   GET  /ws                     snapshot of pending reviews, then every review change
  *   GET  /api/agent/status           kill switch status, read from the intents validator on the server
  *   POST /api/agent/freeze   { reason? }  freeze the agent (validator + role), void unpaid refunds
@@ -30,6 +31,7 @@ import {
 import { WebSocketServer, type WebSocket } from 'ws';
 import { ApproverDirectory, SessionStore, type ApproverAccount } from './approvers.js';
 import { ReviewFeed } from './feed.js';
+import { registerRedTeam, type RedTeamOptions } from './redteam.js';
 import { ReviewError, ReviewService, type FaultHook, type ReviewStatus } from './reviews.js';
 
 export const SESSION_COOKIE = 'escrowops_session';
@@ -48,6 +50,8 @@ export interface ApiOptions {
    * and close it. Omitted: the freeze routes answer 503. `revokeRole: false` skips updateRole.
    */
   killSwitch?: { connectAdmin: () => Promise<MongoClient>; dbName: string; revokeRole?: boolean };
+  /** Enables POST /api/redteam/run (agent credentials only). Omitted: the route answers 503. */
+  redteam?: RedTeamOptions;
 }
 
 export interface ApiServer {
@@ -224,6 +228,7 @@ export async function buildApiServer(opts: ApiOptions): Promise<ApiServer> {
       }
     });
   }
+  registerRedTeam(app, opts.redteam, { approverOf, requireApprover, log });
 
   // S2: WebSocket feed, authenticated with the same session.
   const wss = new WebSocketServer({ noServer: true });

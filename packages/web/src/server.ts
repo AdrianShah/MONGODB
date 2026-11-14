@@ -6,7 +6,8 @@
  *   GET  /api/timeline/:traceId     S7: the $unionWith audit timeline
  *   GET  /ws/pipeline               live: the full pipeline after every change
  *   GET  /api/voice/...             listen / narrate (ElevenLabs, approvers only; see voice.ts)
- *   *    /api/login, /api/logout, /api/me, /api/reviews/...   forwarded to the approval service
+ *   *    /api/login, /api/logout, /api/me, /api/reviews/..., /api/redteam/...
+ *                                   forwarded to the approval service (event streams are piped through)
  *   *    /api/agent/*, /api/freeze, /api/unfreeze   kill switch, forwarded to the approval service (it holds the admin path)
  *   GET  /*                         the built React app (packages/web/dist)
  *
@@ -14,6 +15,8 @@
  * checks the session and runs as escrow_approver.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
+import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
@@ -127,10 +130,16 @@ export async function buildDashboardServer(opts: DashboardOptions): Promise<Fast
     }
     const cookie = res.headers.get('set-cookie');
     if (cookie) reply.header('set-cookie', cookie);
-    reply.code(res.status).header('content-type', res.headers.get('content-type') ?? 'application/json');
+    const type = res.headers.get('content-type') ?? 'application/json';
+    reply.code(res.status).header('content-type', type);
+    // The red-team run streams Server-Sent Events: pass them on as they arrive.
+    if (type.startsWith('text/event-stream') && res.body) {
+      reply.header('cache-control', 'no-cache, no-transform').header('x-accel-buffering', 'no');
+      return reply.send(Readable.fromWeb(res.body as WebReadableStream<Uint8Array>));
+    }
     return reply.send(await res.text());
   };
-  for (const url of ['/api/login', '/api/logout', '/api/me', '/api/reviews', '/api/reviews/*', '/api/freeze', '/api/unfreeze', '/api/agent/*']) {
+  for (const url of ['/api/login', '/api/logout', '/api/me', '/api/reviews', '/api/reviews/*', '/api/redteam/*', '/api/freeze', '/api/unfreeze', '/api/agent/*']) {
     app.route({ method: ['GET', 'POST'], url, handler: forward });
   }
 
