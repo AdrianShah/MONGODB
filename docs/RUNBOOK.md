@@ -23,6 +23,14 @@ For the live agent, set `ANTHROPIC_API_KEY`. For real Stripe refunds, set `PAYME
 
 Open http://127.0.0.1:4100 twice and sign in: as `approver-a` on the laptop and `approver-b` on the second device (same network: set `DASHBOARD_HOST=0.0.0.0`). The board stays hidden until an approver signs in. On Atlas, set `APPROVERS` in `.env`; the approval service refuses the dev passwords on a non-local database.
 
+### Sharing the dashboard (a device on another network, or a remote judge)
+
+`npm run demo:tunnel` (with `npm run services` already running) opens a temporary public HTTPS link (`https://<random>.trycloudflare.com`) to the dashboard on this laptop. It uses a Cloudflare quick tunnel: no account, nothing deployed. The link stops working when you press Ctrl-C, and each run gets a new one. Only the dashboard goes through the tunnel. The approval service, executor and database stay local, and the dashboard forwards sign-in and decisions to the approval service.
+
+- Once: `brew install cloudflared`.
+- The script refuses to start unless `APPROVERS` is set in `.env` with passwords of 12+ characters that are not the dev ones, and `DASHBOARD_PUBLIC` is unset. The dev passwords are in this public repo, and anyone with the link reaches the sign-in page.
+- Change `APPROVERS` before the demo and close the tunnel after it.
+
 Pre-type in terminal 3's history: `npm run batch`, `npm run redteam`, `npm run demo:kill`.
 
 ## On stage
