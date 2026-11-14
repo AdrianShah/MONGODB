@@ -1,0 +1,16 @@
+{
+  "name": "@escrowops/executor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Watches intents and approved, pays each refund exactly once.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@escrowops/shared": "*",
+    "mongodb": "^7.9.0",
+    "stripe": "^23.1.0"
+  }
+}
