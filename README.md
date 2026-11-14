@@ -52,6 +52,7 @@ tickets ──> AGENT (Claude) ──insert──> intents ───────
 | Edit an earlier refund's amount | Role cannot update that collection |
 | Drop or bypass the validator | Role cannot run `collMod` / `bypassDocumentValidation` |
 | Double payout after a crash | Unique index on ledger `source_id` + Change Stream resume tokens |
+| Agent goes rogue mid-run | Kill switch: `updateRole` strips the agent's insert privilege (its next write gets code 13), unpaid intents are voided by ledger tombstones the unique index protects |
 
 Run the attacks yourself:
 
@@ -60,6 +61,10 @@ npm run redteam
 ```
 
 Five attempts, five denials, zero payouts — all from the MongoDB server.
+
+### Stopping an agent mid-run
+
+**Freeze agent** on the dashboard (or `npm run freeze`) asks the approval service, as a signed-in approver, to run `updateRole agent_role` over a short-lived admin connection. The role loses `insert` on `intents` and `review_queue`; the agent's already-open connection gets `MongoServerError` code 13 on its next proposal and the batch stops. Every intent not yet paid is voided: a `failed` ledger tombstone takes its `source_id`, so the unique index stops the executor from ever claiming it. A payout already past its checks is left to finish, never paid twice. Who froze, when, why and what was voided goes into the append-only `kill_switch` collection and shows on the audit timeline. `npm run unfreeze` puts the role back exactly as `roles.ts` defines it. On Atlas, `updateRole` is refused (roles live in the Atlas control plane), so the freeze reports that and changes nothing.
 
 ## Quick start
 
@@ -97,6 +102,8 @@ npm run redteam    # attack with the agent's credentials — all denied
 | `npm run executor` | Pays approved refunds via Stripe test mode or fake provider |
 | `npm run reset` | Clear run data and re-seed; keep schema and roles |
 | `npm run test:chaos` | Kill the executor mid-payout; assert exactly one refund |
+| `npm run freeze -- "reason"` | Kill switch: revoke the agent's write privilege in MongoDB, void unpaid refunds, audit it |
+| `npm run unfreeze` | Restore the agent role to exactly its definition in `roles.ts` |
 
 ## Demo
 

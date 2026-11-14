@@ -136,3 +136,7 @@ To run the full role suite (R1 to R26) against Atlas, the test harness would nee
 
 - The role tests (`tests/roles`) create their own users and roles per test database, which Atlas does not allow. Running them on Atlas needs a mode that uses the five pre-created users and a single shared database.
 - `npm run setup` cannot detect drift between `ROLE_DEFINITIONS` and the roles in Atlas. After changing `roles.ts`, regenerate and re-apply the roles by hand.
+
+## Kill switch on Atlas
+
+`npm run freeze` and the dashboard's **Freeze agent** button run `updateRole agent_role` from a database connection. Atlas refuses that, the same way it refuses `createRole`, so on Atlas the freeze stops with a "role management refused" message and changes nothing: no privilege change, no voided intents. To freeze the agent on Atlas, edit the `agent_role` custom role in the Atlas control plane and remove `INSERT` on `intents` and `review_queue` (**Confirm**: the Admin API's custom database role update endpoint). Changes made in the control plane can take a short while to reach the cluster. The local and test paths are what `tests/roles/kill-switch.test.ts` proves.
