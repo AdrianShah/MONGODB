@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "hivelane hook cursor",
+        "type": "command",
+        "timeout": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "hivelane hook cursor",
+        "type": "command",
+        "timeout": 5,
+        "matcher": "^(Write|Delete)$"
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "hivelane hook cursor",
+        "type": "command",
+        "timeout": 10
+      }
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "BeforeAgent": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "name": "hivelane",
+            "command": "hivelane hook gemini-cli",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "BeforeTool": [
+      {
+        "matcher": "^(write_file|replace)$",
+        "hooks": [
+          {
+            "type": "command",
+            "name": "hivelane",
+            "command": "hivelane hook gemini-cli",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": "^(write_file|replace)$",
+        "hooks": [
+          {
+            "type": "command",
+            "name": "hivelane",
+            "command": "hivelane hook gemini-cli",
+            "timeout": 10000
+          }
+        ]
+      }
+    ]
+  }
+}
