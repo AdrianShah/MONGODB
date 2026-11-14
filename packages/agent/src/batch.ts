@@ -34,6 +34,8 @@ export function statusLine(r: TicketResult, opts: { color?: boolean } = {}): str
       return `${id} ${c.dim('·')} already proposed earlier; nothing new`;
     case 'declined':
       return `${id} ${c.red('✖')} declined: ${d?.status === 'declined' ? d.reason : ''}`;
+    case 'frozen':
+      return `${id} ${c.red('⏸')} ${c.red(`MongoServerError ${r.detail ?? ''}`)} agent is frozen; proposal not written`;
     default:
       return `${id} ${c.red('!')} ${r.status}${r.detail ? `: ${r.detail}` : ''}`;
   }
@@ -41,10 +43,16 @@ export function statusLine(r: TicketResult, opts: { color?: boolean } = {}): str
 
 export async function runBatch(
   ticketIds: string[],
-  opts: AgentOptions & { concurrency?: number; onResult?: (r: TicketResult) => void },
+  opts: AgentOptions & {
+    concurrency?: number;
+    onResult?: (r: TicketResult) => void;
+    /** Called once when a frozen result stops the batch, with the tickets never started. */
+    onFrozen?: (skipped: string[]) => void;
+  },
 ): Promise<TicketResult[]> {
   const queue = [...ticketIds];
   const results: TicketResult[] = [];
+  let frozen = false;
   const worker = async () => {
     for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
       let r: TicketResult;
@@ -55,6 +63,12 @@ export async function runBatch(
       }
       results.push(r);
       opts.onResult?.(r);
+      // Kill switch: the database revoked the agent's write privilege. Stop taking tickets;
+      // the ones still in flight hit the same refusal on their next write.
+      if (r.status === 'frozen' && !frozen) {
+        frozen = true;
+        opts.onFrozen?.(queue.splice(0));
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, opts.concurrency ?? 4) }, worker));

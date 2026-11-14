@@ -52,6 +52,7 @@ tickets ──> AGENT (Claude) ──insert──> intents ───────
 | Edit an earlier refund's amount | Role cannot update that collection |
 | Drop or bypass the validator | Role cannot run `collMod` / `bypassDocumentValidation` |
 | Double payout after a crash | Unique index on ledger `source_id` + Change Stream resume tokens |
+| Agent goes rogue mid-run | Kill switch: an unsatisfiable `$jsonSchema` validator on `intents`/`review_queue` (its next write gets code 121, works on Atlas), plus `updateRole` where allowed (code 13); unpaid intents are voided by ledger tombstones the unique index protects |
 
 Run the attacks yourself:
 
@@ -70,6 +71,10 @@ npm run demo:jailbreak     # alias: npm run jailbreak
 ```
 
 runs the agent in **compromised mode**: guardrails stripped from the system prompt, a scripted model that obeys the injection (no `ANTHROPIC_API_KEY` needed; `-- --live` uses Claude instead), extra hijack tools, and the agent's own database user. It asks for $50,000 (**121**, validator), writes forged approvals to `approved`, forces a payout with `bypassDocumentValidation` and tries to rewrite its own trace (all **13**, roles). Every refusal is a `rejected_write` event in `agent_traces` under the run's trace id; the dashboard card shows **Injection attempt blocked** and the audit timeline lists each one. Nothing reaches `intents`, `approved` or `ledger`.
+
+### Stopping an agent mid-run
+
+**Freeze agent** on the dashboard (or `npm run agent:freeze`) asks the approval service, as a signed-in approver (`POST /api/agent/freeze`), to freeze the agent over a short-lived admin connection. `collMod` puts an unsatisfiable `$jsonSchema` (titled "EscrowOps kill switch: agent frozen") on `intents` and `review_queue`, so the agent's already-open connection gets `MongoServerError` code 121 on its next proposal and the batch stops. This works on Atlas. Where the server allows role management (local mongod), `updateRole agent_role` also drops its insert privilege, and the agent gets code 13 first; on Atlas that step is skipped and recorded. Every intent not yet paid is voided: a `failed` ledger tombstone takes its `source_id`, so the unique index stops the executor from ever claiming it; pending reviews are marked rejected. A payout already past its checks is left to finish, never paid twice. Who froze, when, why and what was voided goes into the append-only `kill_switch` collection and shows on the audit timeline. Re-running setup or apply-policy does not unfreeze. `npm run agent:unfreeze` restores the validators from the active policy and the role from `roles.ts`.
 
 ## Quick start
 
@@ -108,6 +113,8 @@ npm run redteam    # attack with the agent's credentials — all denied
 | `npm run executor` | Pays approved refunds via Stripe test mode or fake provider |
 | `npm run reset` | Clear run data and re-seed; keep schema and roles |
 | `npm run test:chaos` | Kill the executor mid-payout; assert exactly one refund |
+| `npm run agent:freeze -- "reason"` | Kill switch: MongoDB rejects the agent's writes (validator, + role where allowed), void unpaid refunds, audit it (`npm run freeze` is an alias) |
+| `npm run agent:unfreeze` | Restore the validators and the agent role (`npm run unfreeze` is an alias) |
 
 ## Voice for approvers (ElevenLabs)
 

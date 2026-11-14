@@ -310,10 +310,17 @@ export class Executor {
         return; // Diverted to review_queue.
       }
       // Recorded before the provider call: from here on, recovery must retry, never re-check.
-      await this.ledger.updateOne(
-        { _id: entry._id, status: 'pending' },
+      // A compare-and-set: the kill switch voids an unchecked entry with the same filter, so if
+      // it got there first this matches nothing and the refund is never sent.
+      const claimed = await this.ledger.updateOne(
+        { _id: entry._id, status: 'pending', checks_passed: false },
         { $set: { checks_passed: true, updated_at: new Date() } },
       );
+      if (claimed.modifiedCount !== 1) {
+        const now = await this.ledger.findOne({ _id: entry._id }, { projection: { status: 1, failure_reason: 1 } });
+        this.log(`[executor] not paying ${label(entry)}: ledger entry is ${now?.status ?? 'gone'}${now?.failure_reason ? ` (${now.failure_reason})` : ''}`);
+        return;
+      }
       entry.checks_passed = true;
     }
     this.crash.at(2);

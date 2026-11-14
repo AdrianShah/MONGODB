@@ -8,6 +8,7 @@
  *   GET  /api/voice/...             listen / narrate (ElevenLabs, approvers only; see voice.ts)
  *   *    /api/login, /api/logout, /api/me, /api/reviews/..., /api/redteam/...
  *                                   forwarded to the approval service (event streams are piped through)
+ *   *    /api/agent/*, /api/freeze, /api/unfreeze   kill switch, forwarded to the approval service (it holds the admin path)
  *   GET  /*                         the built React app (packages/web/dist)
  *
  * The dashboard never writes. Approving and rejecting go to the approval service, which
@@ -22,13 +23,13 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import type { ChangeStream, Db, MongoClient } from 'mongodb';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { ReviewService } from '@escrowops/api';
-import { loadBudget, loadPipeline } from './pipeline.js';
+import { loadBudget, loadFreeze, loadPipeline } from './pipeline.js';
 import { loadTimeline } from './timeline.js';
 import type { PipelineMessage } from './types.js';
 import { registerVoiceRoutes, type VoiceOptions } from './voice.js';
 
 export const DEFAULT_DIST = fileURLToPath(new URL('../dist/', import.meta.url));
-const WATCHED = ['agent_traces', 'intents', 'review_queue', 'approvals', 'approved', 'ledger', 'tickets', 'budgets'];
+const WATCHED = ['agent_traces', 'intents', 'review_queue', 'approvals', 'approved', 'ledger', 'tickets', 'budgets', 'kill_switch'];
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -94,13 +95,14 @@ export async function buildDashboardServer(opts: DashboardOptions): Promise<Fast
     type: 'pipeline',
     tickets: await loadPipeline(opts.db, reviews),
     budget: await loadBudget(opts.db),
+    freeze: await loadFreeze(opts.db),
   });
 
   app.get('/api/health', async () => ({ ok: true }));
   app.get('/api/config', async () => ({ requireLogin }));
   app.get('/api/pipeline', { preHandler: guard }, async () => {
-    const { tickets, budget } = await snapshot();
-    return { tickets, budget };
+    const { tickets, budget, freeze } = await snapshot();
+    return { tickets, budget, freeze };
   });
   app.get<{ Params: { traceId: string } }>('/api/timeline/:traceId', { preHandler: guard }, async (req) => ({
     trace_id: req.params.traceId,
@@ -137,7 +139,7 @@ export async function buildDashboardServer(opts: DashboardOptions): Promise<Fast
     }
     return reply.send(await res.text());
   };
-  for (const url of ['/api/login', '/api/logout', '/api/me', '/api/reviews', '/api/reviews/*', '/api/redteam/*']) {
+  for (const url of ['/api/login', '/api/logout', '/api/me', '/api/reviews', '/api/reviews/*', '/api/redteam/*', '/api/freeze', '/api/unfreeze', '/api/agent/*']) {
     app.route({ method: ['GET', 'POST'], url, handler: forward });
   }
 

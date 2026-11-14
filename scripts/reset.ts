@@ -9,8 +9,11 @@
  * T4: a repeat run must create new refunds, not replay old ones. With PAYMENTS=stripe
  * the re-seed makes fresh test payments; with FAKE_PROVIDER_URL set, the fake
  * provider's refunds and call log are cleared.
+ *
+ * Kill switch: kill_switch records are run data and are cleared too; if the agent role is
+ * still frozen, reset unfreezes it (and records that), so a repeat demo starts live.
  */
-import { connectAdmin, loadConfigOrExit } from '@escrowops/shared';
+import { agentFrozen, agentRoleFrozen, connectAdmin, loadConfigOrExit, unfreezeAgent } from '@escrowops/shared';
 import { clearFakeProvider, seedPaymentHook } from './lib/payments.js';
 import { formatResetSummary, resetDatabase } from './lib/seed-data.js';
 
@@ -28,6 +31,16 @@ async function main(): Promise<void> {
     console.log(formatResetSummary(summary));
     if (createPayment) console.log('  payments   fresh Stripe test payments for ticket orders');
     console.log(`  fake provider ${fake}`);
+    try {
+      const db = client.db(config.dbName);
+      const roleFrozen = await agentRoleFrozen(client, config.dbName).catch(() => false);
+      if ((await agentFrozen(db)) || roleFrozen) {
+        await unfreezeAgent(client, config.dbName, { actor: 'cli:reset', reason: 'npm run reset' });
+        console.log('  kill switch agent was frozen; unfrozen (validators and agent_role restored)');
+      }
+    } catch (err) {
+      console.warn(`  kill switch could not check or restore agent_role: ${err instanceof Error ? err.message : String(err)}`);
+    }
   } finally {
     await client.close();
   }

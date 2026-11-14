@@ -14,6 +14,7 @@
  */
 import type { ObjectId } from 'mongodb';
 import type { CollectionName } from './collections.js';
+import type { KillSwitchDoc } from './killswitch.js';
 
 export type Currency = 'usd';
 
@@ -141,6 +142,9 @@ export interface ReviewQueueDoc extends RefundProposal {
   status: 'pending' | 'approved' | 'rejected' | 'blocked';
   validator_error: ValidatorErrorRecord;
   updated_at?: Date;
+  /** Set when the kill switch voided this pending review: the `kill_switch` record and why. */
+  voided_by?: ObjectId;
+  void_reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,6 +209,8 @@ export interface LedgerDoc {
   provider: string;
   provider_refund_id?: string;
   failure_reason?: string;
+  /** Set on an entry the kill switch voided: the `kill_switch` record that did it (killswitch.ts). */
+  voided_by?: ObjectId;
   created_at: Date;
   updated_at: Date;
 }
@@ -261,6 +267,7 @@ export interface CollectionDocs {
   budgets: BudgetDoc;
   executor_state: ExecutorStateDoc;
   precedents: PrecedentDoc;
+  kill_switch: KillSwitchDoc;
 }
 
 // Compile-time check that CollectionDocs covers exactly the names in COLLECTIONS.

@@ -5,6 +5,7 @@
 import type { Db } from 'mongodb';
 import {
   COLLECTIONS,
+  loadFreezeStatus,
   type AgentTraceDoc,
   type ApprovedDoc,
   type BudgetDoc,
@@ -14,7 +15,7 @@ import {
   type TicketDoc,
 } from '@escrowops/shared';
 import type { ReviewDoc, ReviewService } from '@escrowops/api';
-import type { BlockedWrite, BudgetSummary, LedgerSummary, Stage, TicketCard } from './types.js';
+import type { BlockedWrite, BudgetSummary, FreezeSummary, LedgerSummary, Stage, TicketCard } from './types.js';
 
 const byTrace = <T extends { trace_id: string }>(docs: T[]) => {
   const map = new Map<string, T[]>();
@@ -129,6 +130,28 @@ export async function loadBudget(db: Db): Promise<BudgetSummary | null> {
   const day = new Date().toISOString().slice(0, 10);
   const doc = await db.collection<BudgetDoc>(COLLECTIONS.budgets).findOne({ _id: day });
   return doc ? { day, cap_cents: doc.cap_cents, spent_cents: doc.spent_cents } : null;
+}
+
+/** Kill switch state from the latest kill_switch record (read-only, as escrow_dashboard). */
+export async function loadFreeze(db: Db): Promise<FreezeSummary | null> {
+  const { frozen, last } = await loadFreezeStatus(db);
+  if (!last) return null;
+  const pick = (v: { ticket_id: string; amount_cents: number; source_id: string }) => ({
+    ticket_id: v.ticket_id,
+    amount_cents: v.amount_cents,
+    source_id: v.source_id,
+  });
+  return {
+    frozen,
+    action: last.action,
+    actor: last.actor,
+    reason: last.reason,
+    at: last.at.toISOString(),
+    voided: last.voided.map(pick),
+    in_flight: last.in_flight.map(pick),
+    voided_reviews: last.voided_reviews?.length ?? 0,
+    role_revoked: last.role_revoked ?? false,
+  };
 }
 
 function summary(e: LedgerDoc): LedgerSummary {
