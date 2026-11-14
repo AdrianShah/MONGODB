@@ -1,78 +1,130 @@
 # EscrowOps
 
-An AI agent resolves refund disputes, and MongoDB decides which of its decisions are allowed to move money.
+An AI agent resolves refund disputes. **MongoDB decides which of its decisions are allowed to move money.**
 
 > Assume the agent is fully compromised. It still cannot move more than $500 per refund, cannot forge an approval, cannot edit its own history, and cannot cause a double payout.
 
-Each part of that claim is enforced by the database (schema validators, collection-level roles, unique indexes), not by agent code.
+Each part of that claim is enforced by the database — schema validators, collection-level roles, unique indexes — not by agent code. The demo proves it by logging in with the agent's own credentials and attacking the database.
 
-## Docs
+**Track:** Agents You Can Audit (with a crash-recovery beat from Finish the Job)
 
-| Doc | What it covers |
+## Why this exists
+
+Support teams want agents that issue refunds end to end. Nobody ships them, because the guardrails live in the same process as the model. Fool the model and you've fooled the guardrail.
+
+EscrowOps moves the guardrail into MongoDB, where the agent cannot reach it.
+
+## How it works
+
+```
+tickets ──> AGENT (Claude) ──insert──> intents ──────────────┐
+                  │                    (validator: ≤ $500)   │
+                  │ on rejection                             ▼
+                  └──insert──> review_queue              EXECUTOR ──> Stripe
+                                    │                         ▲
+                                    ▼                         │
+                            humans approve ──insert──> approved
+                                               (validator: N distinct
+                                                approvers, ≤ $10k)
+```
+
+| Process | Role | LLM? |
+|---|---|---|
+| **Agent** | Proposes refunds into `intents` or `review_queue` | Yes |
+| **Approval service** | Humans write to `approved` — a collection the agent cannot touch | No |
+| **Executor** | Change Streams → Stripe; ledger + unique index = exactly-once | No |
+
+**Policy tiers** (amounts in the active `policies` document):
+
+| Tier | Amount | Requirement |
+|---|---|---|
+| Auto | ≤ $500 | Agent write alone |
+| Peer review | $500.01 – $2,000 | 1 approver |
+| Dual control | $2,000.01 – $10,000 | 2 distinct approvers |
+| Blocked | > $10,000 | Rejected by validator |
+
+## What MongoDB enforces
+
+| Attack | Defense |
 |---|---|
-| [docs/PRD.md](docs/PRD.md) | Problem, policy tiers, architecture, data model, requirements, build plan |
-| [docs/TEST_PLAN.md](docs/TEST_PLAN.md) | Every test case, by ID |
-| [docs/DEMO.md](docs/DEMO.md) | Timed demo script, fallbacks, judge Q&A |
-| [docs/SPIKE.md](docs/SPIKE.md) | Phase 0 findings: real error codes and shapes |
-| [docs/ATLAS_SETUP.md](docs/ATLAS_SETUP.md) | Creating the roles and users on Atlas |
-| [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md) | How work is split into lanes so parallel agents do not collide |
+| Insert a $50,000 refund | Schema validator (error 121) |
+| Forge approvals into `approved` | Role has no write privilege |
+| Edit an earlier refund's amount | Role cannot update that collection |
+| Drop or bypass the validator | Role cannot run `collMod` / `bypassDocumentValidation` |
+| Double payout after a crash | Unique index on ledger `source_id` + Change Stream resume tokens |
 
-## Status
+Run the attacks yourself:
 
-| Phase | State |
-|---|---|
-| 0. Spike | Done locally. Atlas-specific checks still open (see docs/SPIKE.md). |
-| 1. Foundation | Done: validators, indexes, roles, setup, seed, reset, red team. |
-| 2. Executor | Built on `feat/executor` and reviewed. Integration checklist in [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md). |
-| 3. Agent | Not started |
-| 4. Approval service | Not started |
-| 5. Dashboard | Not started |
+```bash
+npm run redteam
+```
+
+Five attempts, five denials, zero payouts — all from the MongoDB server.
 
 ## Quick start
 
-Needs Node 22 or newer. No Docker or Atlas account required for tests.
+Needs **Node 22+**. Tests need no Docker or Atlas account.
 
 ```bash
 npm install
-```
-
-```bash
 npm test
 ```
 
-Tests start their own in-memory MongoDB replica set with auth. The first run downloads a MongoDB binary (about 80 MB).
+Tests spin up an in-memory MongoDB replica set with auth. The first run downloads a MongoDB binary (~80 MB).
 
-## Running the scripts
+### Run against a real database
 
-The scripts need a real server in `MONGODB_URI`. Pick one:
+1. Copy `.env.example` → `.env`
+2. Set `MONGODB_URI` (pick one):
 
 | Option | How |
 |---|---|
-| In-memory (no install) | `npm run db` in one terminal, copy the printed `MONGODB_URI` into `.env` |
-| Docker | `docker compose up -d`, then use the Docker URI from `.env.example` |
-| Atlas | Put the Atlas URI in `.env` and follow [docs/ATLAS_SETUP.md](docs/ATLAS_SETUP.md) for roles |
+| In-memory | `npm run db` in another terminal; paste the printed URI into `.env` |
+| Docker | `docker compose up -d`; use the Docker URI from `.env.example` |
+| Atlas | Atlas URI + [docs/ATLAS_SETUP.md](docs/ATLAS_SETUP.md) for roles |
 
-Copy `.env.example` to `.env` first. Then:
+3. Then:
+
+```bash
+npm run setup      # collections, validators, indexes, roles, users
+npm run seed       # demo customers, orders, dispute tickets, policy
+npm run redteam    # attack with the agent's credentials — all denied
+```
 
 | Command | What it does |
 |---|---|
-| `npm run setup` | Creates collections, validators, indexes, the five roles and their users. Safe to re-run. |
-| `npm run seed` | Loads 12 customers, 25 orders, 12 dispute tickets and the active policy |
-| `npm run redteam` | Logs in as the agent and attacks the database five ways; every attack must be denied |
-| `npm run reset` | Clears run data and re-seeds, keeping validators, indexes, roles and users |
-| `npm run spike` | Re-runs the Phase 0 checks against whatever `MONGODB_URI` points at |
-| `npm run typecheck` | TypeScript, no emit |
+| `npm run batch` | Agent works every open ticket (needs `ANTHROPIC_API_KEY`) |
+| `npm run executor` | Pays approved refunds via Stripe test mode or fake provider |
+| `npm run reset` | Clear run data and re-seed; keep schema and roles |
+| `npm run test:chaos` | Kill the executor mid-payout; assert exactly one refund |
 
-## Layout
+## Demo
+
+Timed script, fallbacks, and likely judge Q&A: **[docs/DEMO.md](docs/DEMO.md)**
+
+The line we want judges to remember:
+
+> We gave the attacker the agent's own database password, and MongoDB still said no.
+
+## Repo layout
 
 ```
-packages/shared/   collection names, types, policy, validators, indexes, roles, connections
-scripts/           setup, seed, reset, redteam, spike, dev database
-data/seed/         demo dataset and expected outcomes per ticket
-tests/             validators, roles, ops, spike, shared harness
-docs/
+packages/shared/     types, policy, validators, indexes, roles, connections
+packages/agent/      Claude batch runner (proposes refunds)
+packages/executor/   Change Stream worker → Stripe / fake provider
+scripts/             setup, seed, reset, redteam, spike, dev database
+data/seed/           demo dataset and expected outcomes per ticket
+tests/               validators, roles, agent, executor, chaos, integration
+docs/                PRD, test plan, demo script, Atlas setup
 ```
 
-## Working in parallel
+## Docs
 
-This repo uses [Hivelane](.hivelane.toml) so several people and their coding agents can edit one checkout safely. Before starting, read the ground rules in [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md): stay in your lane, edit through your agent's editor tools, and leave `package.json` and the lockfile to one owner.
+| Doc | Covers |
+|---|---|
+| [docs/PRD.md](docs/PRD.md) | Problem, policy, architecture, requirements |
+| [docs/TEST_PLAN.md](docs/TEST_PLAN.md) | Every test case by ID |
+| [docs/DEMO.md](docs/DEMO.md) | 3.5-minute demo script + judge Q&A |
+| [docs/ATLAS_SETUP.md](docs/ATLAS_SETUP.md) | Roles and users on Atlas |
+| [packages/agent/README.md](packages/agent/README.md) | Agent tools, traces, env |
+| [packages/executor/README.md](packages/executor/README.md) | Payout flow, crash recovery, env |
