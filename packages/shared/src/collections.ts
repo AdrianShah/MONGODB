@@ -20,6 +20,8 @@ export const COLLECTIONS = {
   executor_state: 'executor_state',
   /** A7: past resolved disputes the agent can search (seed data, with embeddings). */
   precedents: 'precedents',
+  /** Kill switch audit: one append-only record per freeze or unfreeze (killswitch.ts). Admin writes only. */
+  kill_switch: 'kill_switch',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
