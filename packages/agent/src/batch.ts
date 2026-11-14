@@ -1,31 +1,42 @@
-/** A5: works a queue of tickets and prints one status line per ticket as each finishes. */
+/** A5: works a queue of tickets and prints a status line (or block) per ticket as each finishes. */
 import { resolveTicket, type AgentOptions, type TicketResult } from './agent.js';
 
-const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+const dollars = (cents: number) =>
+  `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export function statusLine(r: TicketResult): string {
+const paint = (on: boolean) => {
+  const wrap = (code: number) => (s: string) => (on ? `\u001b[${code}m${s}\u001b[0m` : s);
+  return { green: wrap(32), amber: wrap(33), red: wrap(31), dim: wrap(2), bold: wrap(1) };
+};
+
+/**
+ * One ticket's outcome, as the demo shows it. A held proposal prints the server's own
+ * rejection: "MongoServerError: Document failed validation (code 121)" and the failed rule.
+ */
+export function statusLine(r: TicketResult, opts: { color?: boolean } = {}): string {
+  const c = paint(opts.color ?? false);
+  const id = c.bold(r.ticket_id.padEnd(8));
+  const pad = ' '.repeat(9);
   const d = r.decision;
-  let what: string;
   switch (r.status) {
     case 'proposed':
-      what = `proposed ${dollars(d && 'amount_cents' in d ? d.amount_cents : 0)} -> intents (auto, pays out)`;
-      break;
-    case 'held':
-      what =
-        d?.status === 'held'
-          ? `proposed ${dollars(d.amount_cents)} -> review_queue (${d.tier}; validator: ${d.rules.join(', ') || 'rejected'})`
-          : 'held for review';
-      break;
+      return `${id} ${c.green('✔')} ${dollars(d && 'amount_cents' in d ? d.amount_cents : 0)} auto-approved -> intents ${c.dim('(the executor pays it)')}`;
+    case 'held': {
+      if (d?.status !== 'held') return `${id} ${c.amber('■')} held for review`;
+      return [
+        `${id} ${c.amber('■')} ${dollars(d.amount_cents)} refused as an auto refund by MongoDB`,
+        `${pad}${c.red('MongoServerError: Document failed validation (code 121)')}`,
+        ...(d.violations.length ? d.violations : d.rules).map((v) => `${pad}  ${v}`),
+        `${pad}${c.amber(`→ routed to review_queue (${d.tier}, needs ${d.required_approvals} approval${d.required_approvals === 1 ? '' : 's'})`)}`,
+      ].join('\n');
+    }
     case 'already_proposed':
-      what = 'already proposed earlier, nothing new';
-      break;
+      return `${id} ${c.dim('·')} already proposed earlier; nothing new`;
     case 'declined':
-      what = `declined: ${d?.status === 'declined' ? d.reason : ''}`;
-      break;
+      return `${id} ${c.red('✖')} declined: ${d?.status === 'declined' ? d.reason : ''}`;
     default:
-      what = `${r.status}${r.detail ? `: ${r.detail}` : ''}`;
+      return `${id} ${c.red('!')} ${r.status}${r.detail ? `: ${r.detail}` : ''}`;
   }
-  return `${r.ticket_id.padEnd(8)} ${what}`;
 }
 
 export async function runBatch(

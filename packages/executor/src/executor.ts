@@ -100,6 +100,7 @@ export class Executor {
     for (const doc of await this.state.find({ _id: { $in: SOURCES.map(streamKey) } }).toArray()) {
       tokens.set(doc._id, doc.resume_token as ResumeToken);
     }
+    if (tokens.size > 0) this.log(`[executor] resuming from saved token (${[...tokens.keys()].join(', ')})`);
 
     const startup = Promise.all([
       this.enqueue(() => this.reconcilePending({ updatedBefore: startedAt })),
@@ -213,8 +214,8 @@ export class Executor {
           { returnDocument: 'after' },
         );
         if (!claimed) continue;
-        this.log(`[executor] reconciling pending ${claimed.source_id} (checks_passed=${claimed.checks_passed})`);
-        await this.checkAndPay(claimed);
+        this.log(`[executor] reconciling pending payout ${claimed.source_id} (${dollars(claimed.amount_cents)}, ticket ${claimed.ticket_id})`);
+        await this.checkAndPay(claimed, true);
       } catch (err) {
         this.log(`[executor] reconcile of ${entry.source_id} failed, will retry later: ${(err as Error).message}`);
       }
@@ -277,7 +278,7 @@ export class Executor {
     await this.checkAndPay(entry);
   }
 
-  private async checkAndPay(entry: ExecutorLedgerDoc) {
+  private async checkAndPay(entry: ExecutorLedgerDoc, reconciling = false) {
     if (!entry.checks_passed) {
       const failure = await this.check(entry);
       if (failure) {
@@ -293,7 +294,7 @@ export class Executor {
       entry.checks_passed = true;
     }
     this.crash.at(2);
-    await this.pay(entry);
+    await this.pay(entry, reconciling);
   }
 
   /** E5: the checks a validator cannot express because they need another document. */
@@ -325,7 +326,7 @@ export class Executor {
     return undefined;
   }
 
-  private async pay(entry: ExecutorLedgerDoc) {
+  private async pay(entry: ExecutorLedgerDoc, reconciling = false) {
     const order = await this.orders.findOne({ _id: entry.order_id });
     if (!order) {
       await this.finish(entry, { status: 'failed', failure_reason: `order_not_found: ${entry.order_id}` });
@@ -346,7 +347,11 @@ export class Executor {
         });
         this.crash.at(3);
         await this.finish(entry, { status: 'succeeded', provider: this.provider.name, provider_refund_id: result.refundId });
-        this.log(`[executor] paid ${label(entry)} ${dollars(entry.amount_cents)} -> ${result.refundId} (ticket ${entry.ticket_id})`);
+        this.log(
+          reconciling
+            ? `[executor] reconciled ${label(entry)}: provider returned ${result.refundId} for the same key (no second refund); marked succeeded`
+            : `[executor] paid ${label(entry)} ${dollars(entry.amount_cents)} -> ${result.refundId} (ticket ${entry.ticket_id})`,
+        );
         return;
       } catch (err) {
         if (err instanceof PermanentProviderError) {

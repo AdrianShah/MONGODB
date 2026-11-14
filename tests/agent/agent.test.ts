@@ -7,10 +7,23 @@ import { createHash } from 'node:crypto';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from 'mongodb';
 import { COLLECTIONS, type AgentTraceDoc, type IntentDoc, type ReviewQueueDoc } from '@escrowops/shared';
-import { failedRules, idempotencyKey, resolveTicket, runBatch, statusLine, type AgentOptions } from '@escrowops/agent';
+import { readFileSync } from 'node:fs';
+import {
+  buildExpectedRecording,
+  describeViolations,
+  emptyRecording,
+  failedRules,
+  idempotencyKey,
+  recordingCreateMessage,
+  replayCreateMessage,
+  resolveTicket,
+  runBatch,
+  statusLine,
+  type AgentOptions,
+} from '@escrowops/agent';
 import { useTestDb } from '../helpers/index.js';
 import { setUpAccess } from '../roles/role-helpers.js';
-import { resetDatabase, seedDatabase } from '../../scripts/lib/seed-data.js';
+import { loadSeedData, resetDatabase, seedDatabase } from '../../scripts/lib/seed-data.js';
 import { message, proposeScript, scriptedModel, text, toolUse } from './fake-model.js';
 
 const t = useTestDb('agent');
@@ -217,7 +230,57 @@ describe('batch runner (A5)', () => {
       onResult: (r) => lines.push(statusLine(r)),
     });
     expect(results.map((r) => r.status).sort()).toEqual(['held', 'proposed']);
-    expect(lines.find((l) => l.startsWith('T-1001'))).toMatch(/\$89\.00 -> intents/);
-    expect(lines.find((l) => l.startsWith('T-1009'))).toMatch(/\$1299\.00 -> review_queue \(peer_review; validator: maximum\)/);
+    expect(lines.find((l) => l.startsWith('T-1001'))).toMatch(/✔ \$89\.00 auto-approved -> intents/);
+    const held = lines.find((l) => l.startsWith('T-1009'))!;
+    expect(held).toContain('MongoServerError: Document failed validation (code 121)');
+    expect(held).toContain('amount_cents: 129900 — maximum 50000');
+    expect(held).toContain('→ routed to review_queue (peer_review, needs 1 approval)');
+  });
+});
+
+describe('replay (DEMO.md fallback)', () => {
+  it('the expected-outcomes recording works every seeded ticket into the expected tier, with no model', async () => {
+    const seed = loadSeedData();
+    const expected = JSON.parse(readFileSync(new URL('../../data/seed/expected.json', import.meta.url), 'utf8')) as {
+      tickets: Array<{ ticket_id: string; expected_refund_cents: number; expected_tier: string; summary: string }>;
+    };
+    const rec = buildExpectedRecording(seed.tickets, seed.orders, expected.tickets);
+    const results = await runBatch(
+      seed.tickets.map((t) => t._id),
+      { ...opts(replayCreateMessage(rec)), concurrency: 4 },
+    );
+    for (const e of expected.tickets) {
+      const r = results.find((x) => x.ticket_id === e.ticket_id)!;
+      expect(r.status, e.ticket_id).toBe(e.expected_tier === 'single_agent' ? 'proposed' : 'held');
+      expect(r.decision && 'amount_cents' in r.decision ? r.decision.amount_cents : 0).toBe(e.expected_refund_cents);
+    }
+  });
+
+  it('a recorded live run replays the same tool calls through the database', async () => {
+    const rec = emptyRecording('claude-sonnet-5-5');
+    const live = scriptedModel(proposeScript('T-1001', 'O-5101', 8900));
+    await resolveTicket('T-1001', opts(recordingCreateMessage(live.createMessage, rec)));
+    expect(rec.tickets['T-1001']).toHaveLength(4);
+
+    await resetDatabase(t().db);
+    const replayed = await resolveTicket('T-1001', opts(replayCreateMessage(rec)));
+    expect(replayed.status).toBe('proposed');
+    expect(await intents().findOne({ ticket_id: 'T-1001' })).toMatchObject({ amount_cents: 8900, trace_id: replayed.trace_id });
+  });
+
+  it('describes validator violations the way the demo prints them', () => {
+    const errInfo = {
+      details: {
+        operatorName: '$jsonSchema',
+        schemaRulesNotSatisfied: [
+          {
+            operatorName: 'properties',
+            propertiesNotSatisfied: [{ propertyName: 'amount_cents', details: [{ operatorName: 'maximum', specifiedAs: { maximum: 50000 }, consideredValue: 500000 }] }],
+          },
+          { operatorName: 'additionalProperties', specifiedAs: { additionalProperties: false }, additionalProperties: ['approvals'] },
+        ],
+      },
+    };
+    expect(describeViolations(errInfo)).toEqual(['amount_cents: 500000 — maximum 50000', 'additionalProperties: approvals']);
   });
 });

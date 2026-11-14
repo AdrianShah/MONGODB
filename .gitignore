@@ -5,6 +5,7 @@ node_modules/
 dist/
 coverage/
 test-results/
+.escrowops/
 playwright-report/
 *.log
 .DS_Store

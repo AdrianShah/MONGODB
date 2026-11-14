@@ -2,6 +2,7 @@
  * Executor process: `npm run executor` from the repo root.
  * Connects as the executor database user (EXECUTOR_DB_USER) and nothing else.
  */
+import { hostname } from 'node:os';
 import { MissingEnvError, connectAs, loadConfigOrExit } from '@escrowops/shared';
 import { InvalidEnvError, loadPaymentsConfig, type PaymentsConfig } from './config.js';
 import { Crasher } from './crash.js';
@@ -51,8 +52,28 @@ const shutdown = async (signal: string) => {
 };
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
+// demo:kill: crash on the next payout, after the provider call and before the ledger update.
+process.on('SIGUSR2', () => {
+  crasher.arm(3);
+  console.log('[executor] demo: armed to crash after the next provider call, before the ledger update');
+});
 
 if (crasher.armed) {
   console.log(`[executor] chaos mode: CRASH_AT=${process.env['CRASH_AT']} CRASH_ON_HIT=${process.env['CRASH_ON_HIT'] ?? 1}`);
 }
 await executor.start();
+// Lets `npm run demo:kill` find this process. Refreshed every few seconds, because
+// `npm run reset` clears executor_state while the executor keeps running.
+const startedAt = new Date();
+const register = () =>
+  client
+    .db(config.dbName)
+    .collection<{ _id: string }>('executor_state')
+    .updateOne(
+      { _id: 'process' },
+      { $set: { pid: process.pid, host: hostname(), instance: executor.instanceId, started_at: startedAt, seen_at: new Date() } },
+      { upsert: true },
+    )
+    .catch(() => {});
+await register();
+setInterval(() => void register(), 3000).unref();
