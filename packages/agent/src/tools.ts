@@ -119,7 +119,10 @@ export type Decision =
       amount_cents: number;
       proposal_id: ObjectId;
       tier: ReviewQueueDoc['tier'];
+      required_approvals: number;
       rules: string[];
+      /** The server's reasons, e.g. "amount_cents: 500000 — maximum 50000". */
+      violations: string[];
     }
   | { status: 'already_proposed'; amount_cents: number }
   | { status: 'declined'; reason: string };
@@ -226,8 +229,16 @@ export class TicketTools {
         if (isCode(inner, 11000)) return this.alreadyProposed(proposal.amount_cents);
         throw inner;
       }
-      const rules = failedRules(serverError.errInfo);
-      this.decision = { status: 'held', collection: 'review_queue', amount_cents: proposal.amount_cents, proposal_id: review._id, tier, rules };
+      this.decision = {
+        status: 'held',
+        collection: 'review_queue',
+        amount_cents: proposal.amount_cents,
+        proposal_id: review._id,
+        tier,
+        required_approvals: review.required_approvals,
+        rules: failedRules(serverError.errInfo),
+        violations: describeViolations(serverError.errInfo),
+      };
       await trace.write('decision', { tool: 'propose_refund', output: { ...this.decision, validator_error: review.validator_error } });
       return {
         outcome: 'held_for_human_review',
@@ -262,6 +273,39 @@ interface ProposeInput {
 
 function isCode(err: unknown, code: number): boolean {
   return err instanceof MongoServerError && err.code === code;
+}
+
+/**
+ * One line per failed property in a 121's errInfo, e.g. "amount_cents: 500000 — maximum 50000"
+ * or "additionalProperties: approvals". Falls back to the rule names.
+ */
+export function describeViolations(errInfo: unknown): string[] {
+  const lines: string[] = [];
+  const walk = (node: unknown) => {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== 'object') return;
+    const n = node as Record<string, unknown>;
+    if (typeof n['propertyName'] === 'string' && Array.isArray(n['details'])) {
+      for (const d of n['details'] as Array<Record<string, unknown>>) {
+        const op = String(d['operatorName'] ?? 'rule');
+        const limit = (d['specifiedAs'] as Record<string, unknown> | undefined)?.[op];
+        const value = d['consideredValue'];
+        lines.push(
+          `${n['propertyName']}: ${value === undefined ? '' : `${JSON.stringify(value)} — `}${op}${limit === undefined ? '' : ` ${JSON.stringify(limit)}`}`,
+        );
+      }
+      return;
+    }
+    if (n['operatorName'] === 'additionalProperties' && Array.isArray(n['additionalProperties'])) {
+      lines.push(`additionalProperties: ${(n['additionalProperties'] as string[]).join(', ')}`);
+    }
+    if (n['operatorName'] === 'required' && Array.isArray(n['missingProperties'])) {
+      lines.push(`required: missing ${(n['missingProperties'] as string[]).join(', ')}`);
+    }
+    Object.values(n).forEach(walk);
+  };
+  walk(errInfo);
+  return lines.length ? lines : failedRules(errInfo);
 }
 
 /** The validator rules a 121 names, e.g. ["maximum"], from `errInfo.details`. */

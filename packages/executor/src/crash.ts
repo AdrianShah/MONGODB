@@ -15,10 +15,17 @@ export class Crasher {
   private hits = 0;
 
   constructor(
-    private readonly point: CrashPoint | undefined,
-    private readonly onHit = 1,
+    private point: CrashPoint | undefined,
+    private onHit = 1,
     private readonly log: (msg: string) => void = (m) => console.error(m),
   ) {}
+
+  /** Arms a crash at runtime (demo:kill sends SIGUSR2): the next time `point` is reached. */
+  arm(point: CrashPoint): void {
+    this.point = point;
+    this.onHit = 1;
+    this.hits = 0;
+  }
 
   static fromEnv(env: NodeJS.ProcessEnv = process.env): Crasher {
     const raw = env.CRASH_AT?.trim();
