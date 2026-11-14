@@ -6,7 +6,7 @@
  * mode: guardrails stripped from the system prompt, extra hijack tools (forge approvals, force a
  * payout past the validator, rewrite the audit trail), and the agent's own database user.
  *
- * By default the model is a scripted stub that obeys the injection (no ANTHROPIC_API_KEY needed,
+ * By default the model is a scripted stub that obeys the injection (no model API key needed,
  * identical on stage every time). `--live` uses Claude with the stripped prompt instead; a real
  * model may still refuse to attack, in which case nothing is attempted and the run says so.
  *
@@ -19,11 +19,10 @@
  * (with the stub).
  */
 import { setTimeout as sleep } from 'node:timers/promises';
-import Anthropic from '@anthropic-ai/sdk';
 import type { MongoClient } from 'mongodb';
 import { COLLECTIONS, connectAs, loadConfigOrExit, type AgentTraceDoc, type ReviewQueueDoc } from '@escrowops/shared';
 import {
-  anthropicCreateMessage,
+  liveCreateMessage,
   compromisedModel,
   loadAgentSettings,
   resolveTicket,
@@ -63,7 +62,7 @@ async function main(): Promise<number> {
   if (live) {
     const settings = loadAgentSettings();
     model = settings.model;
-    createMessage = anthropicCreateMessage(new Anthropic());
+    createMessage = liveCreateMessage(settings);
   } else {
     createMessage = compromisedModel();
   }

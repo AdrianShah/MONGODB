@@ -156,7 +156,7 @@ export async function grade(db: Db, c: EvalCase, r: TicketResult, data: Dataset)
 
 /**
  * The labeled answer for every case as a replayable recording, to check the harness and
- * the grader without a model (EVALS_DRY_RUN=1 or no ANTHROPIC_API_KEY).
+ * the grader without a model (EVALS_DRY_RUN=1 or no GROQ_API_KEY / ANTHROPIC_API_KEY).
  */
 export function labeledRecording(data: Dataset): Recording {
   const rec = emptyRecording('labels', 'expected');

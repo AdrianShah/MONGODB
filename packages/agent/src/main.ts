@@ -1,7 +1,7 @@
 /**
  * Batch runner (A5). Connects as the agent database user (AGENT_DB_USER) and nothing else.
  *
- *   npm run batch                     every open ticket, with Claude
+ *   npm run batch                     every open ticket, with the configured model (Groq or Claude)
  *   npm run batch -- T-1001 T-1011    just these
  *   npm run batch -- --replay [file]  no model call: replay recorded responses through the real
  *                                     agent loop (DEMO.md fallback). Uses the file given, else the
@@ -12,11 +12,11 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import Anthropic from '@anthropic-ai/sdk';
 import { COLLECTIONS, connectAs, loadConfigOrExit, type TicketDoc } from '@escrowops/shared';
-import { anthropicCreateMessage, type CreateMessage } from './agent.js';
+import type { CreateMessage } from './agent.js';
 import { runBatch, statusLine } from './batch.js';
 import { loadAgentSettings, type AgentSettings } from './config.js';
+import { liveCreateMessage } from './provider.js';
 import { buildExpectedRecording, emptyRecording, recordingCreateMessage, replayCreateMessage, type Recording } from './replay.js';
 
 const LAST_RUN = resolve('.escrowops/last-run.json');
@@ -66,10 +66,15 @@ try {
       console.log(`[agent] REPLAY of ${from}: no model calls; every database write is real`);
     } else {
       recording = emptyRecording(settings.model);
-      createMessage = recordingCreateMessage(anthropicCreateMessage(new Anthropic()), recording);
+      try {
+        createMessage = recordingCreateMessage(liveCreateMessage(settings), recording);
+      } catch (err) {
+        console.error(`[agent] ${(err as Error).message}`);
+        process.exit(1);
+      }
     }
     console.log(
-      `[agent] ${ticketIds.length} tickets, ${replay ? 'replayed' : `model ${settings.model}, effort ${settings.effort}`}, ${settings.concurrency} at a time\n`,
+      `[agent] ${ticketIds.length} tickets, ${replay ? 'replayed' : `${settings.provider} model ${settings.model}, effort ${settings.effort}`}, ${settings.concurrency} at a time\n`,
     );
     const started = Date.now();
     const color = Boolean(process.stdout.isTTY) && !process.env['NO_COLOR'];
